@@ -2,19 +2,33 @@ import { z } from 'zod';
 import {
   ActorIdSchema,
   CommandIdSchema,
+  ConstructionOrderIdSchema,
   EventIdSchema,
+  FacilityIdSchema,
   FixedPointIntSchema,
   IdempotencyKeySchema,
   JobIdSchema,
+  LedgerTransactionIdSchema,
   MatchIdSchema,
   NationIdSchema,
   PolicyIdSchema,
+  ProductionOrderIdSchema,
   RegionIdSchema,
+  ReservationIdSchema,
   SignedFixedPointIntSchema,
   TreatyIdSchema,
   UnitIdSchema,
   UtcEpochMsSchema,
 } from './primitives';
+import {
+  BudgetAllocationSchema,
+  ExtendedResourceBasketSchema,
+  ExtendedResourceTypeSchema,
+  FacilityOperationalStatusSchema,
+  FacilityTierSchema,
+  FacilityTypeSchema,
+  Phase03EconomyStateSchema,
+} from './phase03';
 import { CONTRACT_SCHEMA_VERSION, REALTIME_SECONDS_PER_GAME_DAY, SEMVER_REGEX } from './versions';
 
 export const SchemaVersionFieldSchema = z.string().regex(SEMVER_REGEX, 'Invalid semver string');
@@ -86,6 +100,7 @@ export const RegionSchema = z
     supplyCapacityFp: FixedPointIntSchema,
     influenceFp: FixedPointIntSchema,
     infrastructureFp: FixedPointIntSchema,
+    economicOutputFp: FixedPointIntSchema.optional(),
   })
   .strict();
 export type Region = z.infer<typeof RegionSchema>;
@@ -155,6 +170,49 @@ export const TreatySchema = z
   .strict();
 export type Treaty = z.infer<typeof TreatySchema>;
 
+export const EconomicLedgerKindSchema = z.enum([
+  'PRODUCTION_CYCLE',
+  'UPKEEP_CYCLE',
+  'TRANSFER_DEBIT',
+  'TRANSFER_CREDIT',
+  'JOB_RESERVE',
+  'JOB_REFUND',
+  'JOB_CANCEL_OVERHEAD',
+  'JOB_COMPLETE_SETTLE',
+  'POLICY_ENACT',
+]);
+export type EconomicLedgerKind = z.infer<typeof EconomicLedgerKindSchema>;
+
+export const EconomicLedgerEntrySchema = z
+  .object({
+    transactionId: LedgerTransactionIdSchema,
+    occurredAtUtc: UtcEpochMsSchema,
+    kind: EconomicLedgerKindSchema,
+    nationId: NationIdSchema,
+    resource: ResourceTypeSchema,
+    direction: z.enum(['CREDIT', 'DEBIT']),
+    amountFp: FixedPointIntSchema,
+    balanceAfterFp: FixedPointIntSchema,
+    source: z.string().min(1).max(80),
+    destination: z.string().min(1).max(80),
+    causedByCommandId: CommandIdSchema,
+    note: z.string().min(1).max(160),
+  })
+  .strict();
+export type EconomicLedgerEntry = z.infer<typeof EconomicLedgerEntrySchema>;
+
+export const EconomicMatchStateSchema = z
+  .object({
+    settlementIntervalMs: z.number().int().min(60_000).max(86_400_000),
+    lastSettlementUtc: UtcEpochMsSchema,
+    taxRateBpsByNation: z.record(z.string(), z.number().int().min(1000).max(4000)),
+    stockpileCaps: ResourceLedgerSchema,
+    transactionSequence: z.number().int().min(0),
+    ledgerCap: z.number().int().min(50).max(2000).default(250),
+  })
+  .strict();
+export type EconomicMatchState = z.infer<typeof EconomicMatchStateSchema>;
+
 export const CommandPayloadSchema = z.discriminatedUnion('type', [
   z
     .object({
@@ -211,6 +269,108 @@ export const CommandPayloadSchema = z.discriminatedUnion('type', [
     .object({
       type: z.literal('ADVANCE_REALTIME_TICK'),
       targetUtc: UtcEpochMsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('SET_TAX_RATE'),
+      nationId: NationIdSchema,
+      taxRateBps: z.number().int().min(1000).max(4000),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CANCEL_JOB'),
+      jobId: JobIdSchema,
+      nationId: NationIdSchema,
+    })
+    .strict(),
+  // P03-01: Direct 8-resource reservation / commit / release lifecycle
+  z
+    .object({
+      type: z.literal('RESERVE_RESOURCES'),
+      reservationId: ReservationIdSchema,
+      nationId: NationIdSchema,
+      refId: z.string().min(1).max(80),
+      basket: ExtendedResourceBasketSchema,
+      note: z.string().min(1).max(160),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('COMMIT_RESERVATION'),
+      reservationId: ReservationIdSchema,
+      nationId: NationIdSchema,
+      consumedBasket: ExtendedResourceBasketSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('RELEASE_RESERVATION'),
+      reservationId: ReservationIdSchema,
+      nationId: NationIdSchema,
+      consumedBeforeCancel: ExtendedResourceBasketSchema.optional(),
+    })
+    .strict(),
+  // P03-02: Fiscal budget policy (delayed tax + 4-sector allocation) & bounded credit
+  z
+    .object({
+      type: z.literal('UPDATE_BUDGET_POLICY'),
+      nationId: NationIdSchema,
+      targetTaxRateBps: z.number().int().min(500).max(6000),
+      allocations: BudgetAllocationSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('MANAGE_CREDIT'),
+      nationId: NationIdSchema,
+      action: z.enum(['DRAW', 'REPAY']),
+      amountFp: FixedPointIntSchema.refine((v) => (v as number) > 0, {
+        message: 'Số tiền vay/trả nợ phải lớn hơn 0.',
+      }),
+    })
+    .strict(),
+  // P03-03: 8 facility types (Tiers I-III), construction queue, production queue & operational pause
+  z
+    .object({
+      type: z.literal('QUEUE_CONSTRUCTION'),
+      orderId: ConstructionOrderIdSchema,
+      nationId: NationIdSchema,
+      regionId: RegionIdSchema,
+      facilityType: FacilityTypeSchema,
+      targetFacilityId: FacilityIdSchema.nullable().default(null),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CANCEL_CONSTRUCTION'),
+      orderId: ConstructionOrderIdSchema,
+      nationId: NationIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('QUEUE_PRODUCTION'),
+      orderId: ProductionOrderIdSchema,
+      nationId: NationIdSchema,
+      facilityId: FacilityIdSchema,
+      batchCount: z.number().int().min(1).max(10),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CANCEL_PRODUCTION'),
+      orderId: ProductionOrderIdSchema,
+      nationId: NationIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('TOGGLE_FACILITY_PAUSE'),
+      nationId: NationIdSchema,
+      facilityId: FacilityIdSchema,
+      paused: z.boolean(),
     })
     .strict(),
 ]);
@@ -298,6 +458,152 @@ export const DomainEventPayloadSchema = z.discriminatedUnion('type', [
       elapsedMs: z.number().int().min(0),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('TAX_RATE_UPDATED'),
+      nationId: NationIdSchema,
+      previousTaxRateBps: z.number().int().min(1000).max(4000),
+      newTaxRateBps: z.number().int().min(1000).max(4000),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('JOB_CANCELLED'),
+      jobId: JobIdSchema,
+      nationId: NationIdSchema,
+      refunded: ResourceLedgerSchema,
+      burnedOverhead: ResourceLedgerSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('ECONOMY_CYCLE_SETTLED'),
+      cycleUtc: UtcEpochMsSchema,
+      cyclesSettled: z.number().int().min(1),
+      totalMinted: ResourceLedgerSchema,
+      totalBurned: ResourceLedgerSchema,
+      shortfallNationIds: z.array(NationIdSchema),
+    })
+    .strict(),
+  // Phase 03 domain events
+  z
+    .object({
+      type: z.literal('RESOURCES_RESERVED'),
+      reservationId: ReservationIdSchema,
+      nationId: NationIdSchema,
+      refId: z.string(),
+      basket: ExtendedResourceBasketSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('RESERVATION_SETTLED'),
+      reservationId: ReservationIdSchema,
+      nationId: NationIdSchema,
+      outcome: z.enum(['COMMITTED', 'RELEASED', 'PARTIAL_RELEASED']),
+      consumed: ExtendedResourceBasketSchema,
+      released: ExtendedResourceBasketSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('BUDGET_POLICY_UPDATED'),
+      nationId: NationIdSchema,
+      effectiveTaxRateBps: z.number().int().min(500).max(6000),
+      targetTaxRateBps: z.number().int().min(500).max(6000),
+      taxChangeEffectiveAtUtc: UtcEpochMsSchema.nullable(),
+      allocations: BudgetAllocationSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CREDIT_UPDATED'),
+      nationId: NationIdSchema,
+      action: z.enum(['DRAW', 'REPAY']),
+      amountFp: FixedPointIntSchema,
+      debtAfterFp: FixedPointIntSchema,
+      creditLimitFp: FixedPointIntSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CONSTRUCTION_QUEUED'),
+      orderId: ConstructionOrderIdSchema,
+      nationId: NationIdSchema,
+      regionId: RegionIdSchema,
+      facilityType: FacilityTypeSchema,
+      targetTier: FacilityTierSchema,
+      completesAtUtc: UtcEpochMsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CONSTRUCTION_COMPLETED'),
+      orderId: ConstructionOrderIdSchema,
+      facilityId: FacilityIdSchema,
+      nationId: NationIdSchema,
+      regionId: RegionIdSchema,
+      facilityType: FacilityTypeSchema,
+      tier: FacilityTierSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CONSTRUCTION_CANCELLED'),
+      orderId: ConstructionOrderIdSchema,
+      nationId: NationIdSchema,
+      consumed: ExtendedResourceBasketSchema,
+      refunded: ExtendedResourceBasketSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('PRODUCTION_QUEUED'),
+      orderId: ProductionOrderIdSchema,
+      nationId: NationIdSchema,
+      facilityId: FacilityIdSchema,
+      outputResource: ExtendedResourceTypeSchema,
+      outputAmountFp: FixedPointIntSchema,
+      completesAtUtc: UtcEpochMsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('PRODUCTION_COMPLETED'),
+      orderId: ProductionOrderIdSchema,
+      nationId: NationIdSchema,
+      facilityId: FacilityIdSchema,
+      outputResource: ExtendedResourceTypeSchema,
+      outputAmountFp: FixedPointIntSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('PRODUCTION_CANCELLED'),
+      orderId: ProductionOrderIdSchema,
+      nationId: NationIdSchema,
+      consumed: ExtendedResourceBasketSchema,
+      refunded: ExtendedResourceBasketSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('FACILITY_STATUS_CHANGED'),
+      facilityId: FacilityIdSchema,
+      nationId: NationIdSchema,
+      operationalStatus: FacilityOperationalStatusSchema,
+      pauseReason: z.string().nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('PHASE03_CYCLE_SETTLED'),
+      cycleUtc: UtcEpochMsSchema,
+      cyclesSettled: z.number().int().min(1),
+      austerityNationIds: z.array(NationIdSchema),
+      pausedFacilityIds: z.array(FacilityIdSchema),
+    })
+    .strict(),
 ]);
 export type DomainEventPayload = z.infer<typeof DomainEventPayloadSchema>;
 
@@ -381,6 +687,9 @@ export const MatchStateSchema = z
     policies: z.record(z.string(), PolicySchema),
     treaties: z.record(z.string(), TreatySchema),
     resourceAudit: ResourceAuditSchema,
+    economicState: EconomicMatchStateSchema.optional(),
+    economicLedger: z.array(EconomicLedgerEntrySchema).optional(),
+    phase03Economy: Phase03EconomyStateSchema.optional(),
     eventSequence: z.number().int().min(0),
     events: z.array(DomainEventSchema),
     idempotencyReceipts: z.record(z.string(), IdempotencyReceiptSchema),

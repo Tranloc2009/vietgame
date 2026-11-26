@@ -230,6 +230,68 @@ const MIGRATIONS: readonly MigrationDefinition[] = [
       );
     `,
   },
+  {
+    id: '003_match_scoped_log_uniqueness',
+    description:
+      'Scope event_log.event_id and command_log.command_id uniqueness per match_id so concurrent matches never collide while preserving 100% of existing records',
+    sql: `
+      CREATE TABLE event_log_v3 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        occurred_at_utc INTEGER NOT NULL,
+        tie_break_priority INTEGER NOT NULL,
+        caused_by_command_id TEXT NOT NULL,
+        event_json TEXT NOT NULL,
+        FOREIGN KEY (match_id) REFERENCES matches(match_id) ON DELETE CASCADE,
+        UNIQUE (match_id, event_id)
+      );
+      INSERT INTO event_log_v3 (
+        id, match_id, event_id, sequence, occurred_at_utc,
+        tie_break_priority, caused_by_command_id, event_json
+      )
+      SELECT
+        id, match_id, event_id, sequence, occurred_at_utc,
+        tie_break_priority, caused_by_command_id, event_json
+      FROM event_log;
+      DROP TABLE event_log;
+      ALTER TABLE event_log_v3 RENAME TO event_log;
+      CREATE INDEX IF NOT EXISTS idx_event_log_match_seq
+        ON event_log (match_id, sequence ASC);
+
+      CREATE TABLE command_log_v3 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id TEXT NOT NULL,
+        command_id TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        expected_version INTEGER NOT NULL,
+        applied_version INTEGER NOT NULL,
+        applied_at_utc INTEGER NOT NULL,
+        command_json TEXT NOT NULL,
+        payload_digest TEXT NOT NULL,
+        FOREIGN KEY (match_id) REFERENCES matches(match_id) ON DELETE CASCADE,
+        UNIQUE (match_id, command_id),
+        UNIQUE (match_id, idempotency_key)
+      );
+      INSERT INTO command_log_v3 (
+        id, match_id, command_id, actor_id, idempotency_key,
+        sequence, expected_version, applied_version, applied_at_utc,
+        command_json, payload_digest
+      )
+      SELECT
+        id, match_id, command_id, actor_id, idempotency_key,
+        sequence, expected_version, applied_version, applied_at_utc,
+        command_json, payload_digest
+      FROM command_log;
+      DROP TABLE command_log;
+      ALTER TABLE command_log_v3 RENAME TO command_log;
+      CREATE INDEX IF NOT EXISTS idx_command_log_match_order
+        ON command_log (match_id, id ASC);
+    `,
+  },
 ];
 
 function hashPassword(password: string, saltHex: string): string {

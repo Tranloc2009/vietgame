@@ -2,4 +2,7 @@ export * from './clock';
 export * from './rng';
 export * from './hash';
 export * from './invariants';
+export * from './economy';
+export * from './phase03Catalog';
+export * from './phase03Engine';
 export * from './reducer';

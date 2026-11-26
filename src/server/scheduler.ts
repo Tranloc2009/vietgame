@@ -124,15 +124,33 @@ export class MatchClockScheduler {
         break;
       }
 
-      // Find earliest overdue scheduled job deadline OR next 60s tick boundary
+      // Find earliest overdue scheduled job, construction order, or production order deadline OR next 60s tick boundary
       let earliestDueJobUtc: number | null = null;
+      const considerDeadline = (deadlineUtc: number): void => {
+        if (deadlineUtc <= (nowUtc as number)) {
+          if (earliestDueJobUtc === null || deadlineUtc < earliestDueJobUtc) {
+            earliestDueJobUtc = deadlineUtc;
+          }
+        }
+      };
+
       for (const job of Object.values(state.jobs)) {
-        if (
-          job.status === 'SCHEDULED' &&
-          (job.completesAtUtc as number) <= (nowUtc as number)
-        ) {
-          if (earliestDueJobUtc === null || (job.completesAtUtc as number) < earliestDueJobUtc) {
-            earliestDueJobUtc = job.completesAtUtc as number;
+        if (job.status === 'SCHEDULED') {
+          considerDeadline(job.completesAtUtc as number);
+        }
+      }
+      if (state.phase03Economy) {
+        for (const order of Object.values(state.phase03Economy.constructionQueue)) {
+          if (order.status === 'IN_PROGRESS' || order.status === 'QUEUED') {
+            considerDeadline(order.completesAtUtc as number);
+          }
+        }
+        for (const order of Object.values(state.phase03Economy.productionQueue)) {
+          if (order.status === 'IN_PROGRESS' || order.status === 'QUEUED') {
+            const fac = state.phase03Economy.facilities[order.facilityId];
+            if (fac && fac.operationalStatus === 'ACTIVE') {
+              considerDeadline(order.completesAtUtc as number);
+            }
           }
         }
       }

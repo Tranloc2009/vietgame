@@ -29,7 +29,11 @@ import {
 } from '../contracts';
 import { createTwoFactionFictionalFixture } from '../content/fictionalFixture';
 import { WORLD_GEO_LAYERS, WORLD_MAP_72_GEOJSON } from '../content/worldMap72';
-import { SimulationClock } from '../simulation';
+import {
+  computeNationEconomicForecast,
+  computePhase03NationReport,
+  SimulationClock,
+} from '../simulation';
 import { ServerConfig } from './config';
 import { SqliteMatchStore } from './db/sqliteStore';
 import { MatchClockScheduler } from './scheduler';
@@ -135,6 +139,42 @@ function checkCommandNationOwnership(
       return { ok: true };
     case 'MOVE_UNIT':
       // Unit ownership is further verified against actor.nationId inside reduceCommand
+      return { ok: true };
+    case 'SET_TAX_RATE':
+      if (command.payload.nationId !== memberNationId) {
+        return {
+          ok: false,
+          code: 'FORBIDDEN_NATION_IMPERSONATION',
+          reason: `Bạn chỉ có quyền điều chỉnh thuế suất cho "${memberNationId}", không thể mạo danh "${command.payload.nationId}".`,
+        };
+      }
+      return { ok: true };
+    case 'CANCEL_JOB':
+      if (command.payload.nationId !== memberNationId) {
+        return {
+          ok: false,
+          code: 'FORBIDDEN_NATION_IMPERSONATION',
+          reason: `Bạn chỉ có quyền hủy tác vụ của "${memberNationId}", không thể mạo danh "${command.payload.nationId}".`,
+        };
+      }
+      return { ok: true };
+    case 'RESERVE_RESOURCES':
+    case 'COMMIT_RESERVATION':
+    case 'RELEASE_RESERVATION':
+    case 'UPDATE_BUDGET_POLICY':
+    case 'MANAGE_CREDIT':
+    case 'QUEUE_CONSTRUCTION':
+    case 'CANCEL_CONSTRUCTION':
+    case 'QUEUE_PRODUCTION':
+    case 'CANCEL_PRODUCTION':
+    case 'TOGGLE_FACILITY_PAUSE':
+      if (command.payload.nationId !== memberNationId) {
+        return {
+          ok: false,
+          code: 'FORBIDDEN_NATION_IMPERSONATION',
+          reason: `Bạn chỉ có quyền thực hiện lệnh kinh tế/sản xuất cho "${memberNationId}", không thể mạo danh "${command.payload.nationId}".`,
+        };
+      }
       return { ok: true };
   }
 }
@@ -1281,6 +1321,52 @@ export function createServerRuntime(
     }
 
     res.json({ ok: true, report });
+  });
+
+  // P03-01: Authenticated viewer-scoped economic forecast & traceable resource ledger
+  app.get('/api/rooms/:matchId/economy', (req: Request, res: Response) => {
+    const user = requireAuthenticatedUser(req, res);
+    if (!user) return;
+
+    const parsedId = MatchIdSchema.safeParse(req.params.matchId);
+    if (!parsedId.success) {
+      res.status(400).json({ ok: false, code: 'INVALID_MATCH_ID', reason: 'Match ID không hợp lệ.' });
+      return;
+    }
+
+    const slotInfo = store.getUserSlotInRoom(parsedId.data, user.userId);
+    if (!slotInfo) {
+      res.status(403).json({
+        ok: false,
+        code: 'NOT_ROOM_MEMBER',
+        reason: 'Chỉ thành viên thuộc 2 slot Bắc / Nam mới được xem sổ cái kinh tế của phòng đấu này.',
+      });
+      return;
+    }
+
+    const loaded = store.getMatch(parsedId.data);
+    if (!loaded) {
+      res.status(404).json({ ok: false, code: 'MATCH_NOT_FOUND', reason: 'Không tìm thấy trận đấu.' });
+      return;
+    }
+
+    const forecast = computeNationEconomicForecast(loaded.state, slotInfo.nationId);
+    const viewerLedger = (loaded.state.economicLedger ?? []).filter(
+      (entry) => entry.nationId === slotInfo.nationId
+    );
+    const phase03 = computePhase03NationReport(loaded.state, slotInfo.nationId);
+
+    res.json({
+      ok: true,
+      matchId: parsedId.data,
+      version: loaded.state.version,
+      slot: slotInfo.slot,
+      nationId: slotInfo.nationId,
+      forecast,
+      ledger: viewerLedger,
+      phase03,
+      serverUtc: clock.nowUtc(),
+    });
   });
 
   // Catch-all for unknown API routes (never return HTML for /api/*)

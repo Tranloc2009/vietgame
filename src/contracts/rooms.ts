@@ -279,9 +279,62 @@ export function projectMatchForViewer(
     }
   }
 
+  const filteredLedger =
+    publicFields.economicLedger === undefined
+      ? undefined
+      : viewerNationId
+        ? publicFields.economicLedger.filter((entry) => entry.nationId === viewerNationId)
+        : [];
+
+  const filteredPhase03 =
+    publicFields.phase03Economy === undefined
+      ? undefined
+      : {
+          ...publicFields.phase03Economy,
+          stocksByNation: viewerNationId && publicFields.phase03Economy.stocksByNation[viewerNationId]
+            ? { [viewerNationId]: publicFields.phase03Economy.stocksByNation[viewerNationId] }
+            : {},
+          budgetsByNation: viewerNationId && publicFields.phase03Economy.budgetsByNation[viewerNationId]
+            ? { [viewerNationId]: publicFields.phase03Economy.budgetsByNation[viewerNationId] }
+            : {},
+          reservations: viewerNationId
+            ? Object.fromEntries(
+                Object.entries(publicFields.phase03Economy.reservations).filter(
+                  ([, r]) => r.ownerNationId === viewerNationId
+                )
+              )
+            : {},
+          ledger: viewerNationId
+            ? publicFields.phase03Economy.ledger.filter((e) => e.nationId === viewerNationId)
+            : [],
+          facilities: viewerNationId
+            ? Object.fromEntries(
+                Object.entries(publicFields.phase03Economy.facilities).filter(
+                  ([, f]) => f.ownerNationId === viewerNationId
+                )
+              )
+            : {},
+          constructionQueue: viewerNationId
+            ? Object.fromEntries(
+                Object.entries(publicFields.phase03Economy.constructionQueue).filter(
+                  ([, c]) => c.ownerNationId === viewerNationId
+                )
+              )
+            : {},
+          productionQueue: viewerNationId
+            ? Object.fromEntries(
+                Object.entries(publicFields.phase03Economy.productionQueue).filter(
+                  ([, p]) => p.ownerNationId === viewerNationId
+                )
+              )
+            : {},
+        };
+
   return FilteredClientMatchViewSchema.parse({
     ...publicFields,
     units: filteredUnits,
+    ...(filteredLedger !== undefined ? { economicLedger: filteredLedger } : {}),
+    ...(filteredPhase03 !== undefined ? { phase03Economy: filteredPhase03 } : {}),
     stateHash,
     viewerSlot,
     viewerNationId,

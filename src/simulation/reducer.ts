@@ -6,6 +6,8 @@ import {
   CONTRACT_SCHEMA_VERSION,
   DomainEvent,
   DomainEventPayload,
+  EconomicLedgerEntry,
+  EconomicMatchState,
   EventId,
   EventIdSchema,
   FixedPointInt,
@@ -14,11 +16,34 @@ import {
   IdempotencyReceipt,
   MatchState,
   Nation,
+  Phase03EconomyState,
   ResourceLedger,
   ResourceType,
   UtcEpochMs,
 } from '../contracts';
 import { SimulationClock } from './clock';
+import {
+  appendEconomicLedgerEntry,
+  computeJobCancellationSplit,
+  DEFAULT_TAX_RATE_BPS,
+  RESOURCE_TYPES,
+  settleDueEconomicCycles,
+} from './economy';
+import {
+  FACILITY_CATALOG,
+  TAX_CHANGE_COOLDOWN_MS,
+  TAX_POLICY_DELAY_MS,
+} from './phase03Catalog';
+import {
+  appendExtendedLedgerEntry,
+  buildOrderReservationId,
+  computeProRataCancellationSplit,
+  isZeroExtendedBasket,
+  reserveNationResources,
+  scaleExtendedBasket,
+  settleNationReservation,
+  settlePhase03OnRealtimeTick,
+} from './phase03Engine';
 import { computePayloadDigest, computeStateHash } from './hash';
 import { assertSimulationInvariants, compareEventsDeterministically } from './invariants';
 import { nextSeededInt } from './rng';
@@ -234,15 +259,40 @@ export function reduceCommand(
   }
 
   // Clone mutable working slices immutably (shallow copies of records we may update)
-  const nations = { ...state.nations };
+  const nextVersion = state.version + 1;
+  let nations = { ...state.nations };
   const units = { ...state.units };
   const jobs = { ...state.jobs };
   const policies = { ...state.policies };
   const treaties = { ...state.treaties };
   let resourceAudit = state.resourceAudit;
+  let economicState: EconomicMatchState | undefined = state.economicState
+    ? {
+        ...state.economicState,
+        taxRateBpsByNation: { ...state.economicState.taxRateBpsByNation },
+      }
+    : undefined;
+  let economicLedger: EconomicLedgerEntry[] | undefined = state.economicLedger
+    ? [...state.economicLedger]
+    : state.economicState
+      ? []
+      : undefined;
+  let phase03Economy: Phase03EconomyState | undefined = state.phase03Economy;
   let nextUtc: UtcEpochMs = nowUtc;
   let nextRngState = state.serverPrivate.rngState;
   const drafts: PendingEventDraft[] = [];
+
+  const recordLedger = (entry: Omit<Parameters<typeof appendEconomicLedgerEntry>[2], 'matchVersion' | 'causedByCommandId'>): void => {
+    if (!economicState || !economicLedger) return;
+    if ((entry.amountFp as number) <= 0) return;
+    const appended = appendEconomicLedgerEntry(economicState, economicLedger, {
+      ...entry,
+      matchVersion: nextVersion,
+      causedByCommandId: command.commandId,
+    });
+    economicState = appended.economicState;
+    economicLedger = appended.ledger;
+  };
 
   const payload = command.payload;
 
@@ -293,6 +343,31 @@ export function reduceCommand(
       };
       nations[updatedFrom.nationId] = updatedFrom;
       nations[updatedTo.nationId] = updatedTo;
+
+      recordLedger({
+        occurredAtUtc: nowUtc,
+        kind: 'TRANSFER_DEBIT',
+        nationId: updatedFrom.nationId,
+        resource: payload.resource,
+        direction: 'DEBIT',
+        amountFp: payload.amountFp,
+        balanceAfterFp: updatedFrom.resources[payload.resource],
+        source: updatedFrom.nationId,
+        destination: updatedTo.nationId,
+        note: payload.reason,
+      });
+      recordLedger({
+        occurredAtUtc: nowUtc,
+        kind: 'TRANSFER_CREDIT',
+        nationId: updatedTo.nationId,
+        resource: payload.resource,
+        direction: 'CREDIT',
+        amountFp: payload.amountFp,
+        balanceAfterFp: updatedTo.resources[payload.resource],
+        source: updatedFrom.nationId,
+        destination: updatedTo.nationId,
+        note: payload.reason,
+      });
 
       drafts.push({
         occurredAtUtc: nowUtc,
@@ -418,6 +493,19 @@ export function reduceCommand(
         stabilityDeltaFp: payload.stabilityDeltaFp,
       };
 
+      recordLedger({
+        occurredAtUtc: nowUtc,
+        kind: 'POLICY_ENACT',
+        nationId: nation.nationId,
+        resource: 'politicalCapital',
+        direction: 'DEBIT',
+        amountFp: payload.enactmentCostFp,
+        balanceAfterFp: nations[nation.nationId].resources.politicalCapital,
+        source: nation.nationId,
+        destination: `POLICY:${payload.code}`,
+        note: `Ban hành chính sách ${payload.title}`,
+      });
+
       drafts.push({
         occurredAtUtc: nowUtc,
         tieBreakPriority: 40,
@@ -526,6 +614,19 @@ export function reduceCommand(
         reservedCost,
       };
 
+      recordLedger({
+        occurredAtUtc: nowUtc,
+        kind: 'JOB_RESERVE',
+        nationId: nation.nationId,
+        resource: payload.costResource,
+        direction: 'DEBIT',
+        amountFp: payload.costAmountFp,
+        balanceAfterFp: nations[nation.nationId].resources[payload.costResource],
+        source: nation.nationId,
+        destination: `ESCROW:${payload.jobId}`,
+        note: `Tạm giữ tài nguyên cho tác vụ ${payload.kind}`,
+      });
+
       drafts.push({
         occurredAtUtc: nowUtc,
         tieBreakPriority: 60,
@@ -593,6 +694,27 @@ export function reduceCommand(
           burnedTotal: addLedgers(resourceAudit.burnedTotal, job.reservedCost),
         };
 
+        const ownerNation = nations[job.ownerNationId];
+        if (ownerNation) {
+          for (const key of RESOURCE_TYPES) {
+            const spent = job.reservedCost[key];
+            if ((spent as number) > 0) {
+              recordLedger({
+                occurredAtUtc: job.completesAtUtc,
+                kind: 'JOB_COMPLETE_SETTLE',
+                nationId: job.ownerNationId,
+                resource: key,
+                direction: 'DEBIT',
+                amountFp: spent,
+                balanceAfterFp: ownerNation.resources[key],
+                source: `ESCROW:${job.jobId}`,
+                destination: 'JOB_COMPLETE_BURN',
+                note: `Tất toán chi phí hoàn tất tác vụ ${job.kind}`,
+              });
+            }
+          }
+        }
+
         drafts.push({
           occurredAtUtc: job.completesAtUtc,
           tieBreakPriority: 10,
@@ -605,6 +727,54 @@ export function reduceCommand(
             deterministicRoll: rollStep.value,
           },
         });
+      }
+
+      // P03-01: Settle any complete hourly economic cycles elapsed up to targetUtc
+      if (economicState && economicLedger) {
+        const settled = settleDueEconomicCycles({
+          matchVersion: nextVersion,
+          targetUtc: payload.targetUtc,
+          commandId: command.commandId,
+          regions: state.regions,
+          units,
+          policies,
+          nations,
+          resourceAudit,
+          economicState,
+          economicLedger,
+        });
+        nations = settled.nations;
+        resourceAudit = settled.resourceAudit;
+        economicState = settled.economicState;
+        economicLedger = settled.economicLedger;
+
+        if (settled.settledEvent) {
+          drafts.push({
+            occurredAtUtc: settled.settledEvent.cycleUtc,
+            tieBreakPriority: 15,
+            tieBreakKey: 'economy_settlement',
+            payload: settled.settledEvent,
+          });
+        }
+      }
+
+      // Phase 03: Settle due construction/production queues & hourly 8-resource/fiscal/facility cycles
+      if (phase03Economy) {
+        const p03Tick = settlePhase03OnRealtimeTick({
+          matchVersion: nextVersion,
+          previousUtc: state.currentUtc,
+          targetUtc: payload.targetUtc,
+          commandId: command.commandId,
+          regions: state.regions,
+          units,
+          nations,
+          phase03Economy,
+        });
+        phase03Economy = p03Tick.phase03Economy;
+        nations = p03Tick.nations;
+        for (const ev of p03Tick.events) {
+          drafts.push(ev);
+        }
       }
 
       nextUtc = payload.targetUtc;
@@ -621,9 +791,851 @@ export function reduceCommand(
       });
       break;
     }
+
+    case 'SET_TAX_RATE': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(
+          state,
+          'FORBIDDEN_ACTION',
+          `Actor "${actor.actorId}" cannot change tax rate for nation "${payload.nationId}".`
+        );
+      }
+      if (!economicState) {
+        return reject(
+          state,
+          'INVALID_TARGET',
+          'Economic fiscal state is not initialized for this match.'
+        );
+      }
+      if (!nations[payload.nationId]) {
+        return reject(state, 'INVALID_TARGET', `Nation "${payload.nationId}" does not exist.`);
+      }
+
+      const previousTaxRateBps =
+        economicState.taxRateBpsByNation[payload.nationId] ?? DEFAULT_TAX_RATE_BPS;
+
+      economicState = {
+        ...economicState,
+        taxRateBpsByNation: {
+          ...economicState.taxRateBpsByNation,
+          [payload.nationId]: payload.taxRateBps,
+        },
+      };
+
+      drafts.push({
+        occurredAtUtc: nowUtc,
+        tieBreakPriority: 25,
+        tieBreakKey: payload.nationId,
+        payload: {
+          type: 'TAX_RATE_UPDATED',
+          nationId: payload.nationId,
+          previousTaxRateBps,
+          newTaxRateBps: payload.taxRateBps,
+        },
+      });
+      break;
+    }
+
+    case 'CANCEL_JOB': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(
+          state,
+          'FORBIDDEN_ACTION',
+          `Actor "${actor.actorId}" cannot cancel job for nation "${payload.nationId}".`
+        );
+      }
+      const job = jobs[payload.jobId];
+      if (!job) {
+        return reject(state, 'INVALID_TARGET', `Job "${payload.jobId}" does not exist.`);
+      }
+      if (job.ownerNationId !== payload.nationId) {
+        return reject(
+          state,
+          'FORBIDDEN_ACTION',
+          `Nation "${payload.nationId}" does not own job "${job.jobId}".`
+        );
+      }
+      if (job.status !== 'SCHEDULED') {
+        return reject(
+          state,
+          'INVALID_TARGET',
+          `Job "${job.jobId}" is already ${job.status} and cannot be cancelled.`
+        );
+      }
+      const nation = nations[payload.nationId];
+      if (!nation) {
+        return reject(state, 'INVALID_TARGET', `Nation "${payload.nationId}" does not exist.`);
+      }
+
+      const { refunded, burnedOverhead } = computeJobCancellationSplit(job.reservedCost);
+
+      const updatedNation: Nation = {
+        ...nation,
+        resources: addLedgers(nation.resources, refunded),
+      };
+      nations[nation.nationId] = updatedNation;
+
+      jobs[job.jobId] = {
+        ...job,
+        status: 'CANCELLED',
+      };
+
+      resourceAudit = {
+        ...resourceAudit,
+        burnedTotal: addLedgers(resourceAudit.burnedTotal, burnedOverhead),
+      };
+
+      for (const key of RESOURCE_TYPES) {
+        const refundedAmount = refunded[key];
+        const burnedAmount = burnedOverhead[key];
+        if ((refundedAmount as number) > 0) {
+          recordLedger({
+            occurredAtUtc: nowUtc,
+            kind: 'JOB_REFUND',
+            nationId: nation.nationId,
+            resource: key,
+            direction: 'CREDIT',
+            amountFp: refundedAmount,
+            balanceAfterFp: updatedNation.resources[key],
+            source: `ESCROW:${job.jobId}`,
+            destination: nation.nationId,
+            note: `Hoàn trả 80% chi phí khi hủy tác vụ ${job.kind}`,
+          });
+        }
+        if ((burnedAmount as number) > 0) {
+          recordLedger({
+            occurredAtUtc: nowUtc,
+            kind: 'JOB_CANCEL_OVERHEAD',
+            nationId: nation.nationId,
+            resource: key,
+            direction: 'DEBIT',
+            amountFp: burnedAmount,
+            balanceAfterFp: updatedNation.resources[key],
+            source: `ESCROW:${job.jobId}`,
+            destination: 'CANCEL_OVERHEAD_BURN',
+            note: `Khấu trừ 20% phí hủy tác vụ ${job.kind}`,
+          });
+        }
+      }
+
+      drafts.push({
+        occurredAtUtc: nowUtc,
+        tieBreakPriority: 65,
+        tieBreakKey: job.jobId,
+        payload: {
+          type: 'JOB_CANCELLED',
+          jobId: job.jobId,
+          nationId: nation.nationId,
+          refunded,
+          burnedOverhead,
+        },
+      });
+      break;
+    }
+
+    // =========================================================================
+    // Phase 03 — P03-01 (Reservation/Commit/Release), P03-02 (Budget/Credit), P03-03 (Facilities/Queues)
+    // =========================================================================
+
+    case 'RESERVE_RESOURCES': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Actor "${actor.actorId}" cannot reserve resources for "${payload.nationId}".`);
+      }
+      if (!phase03Economy) {
+        return reject(state, 'INVALID_TARGET', 'Phase 03 economic ledger is not initialized for this match.');
+      }
+      if (isZeroExtendedBasket(payload.basket)) {
+        return reject(state, 'INVALID_TARGET', 'Cần tạm giữ ít nhất một tài nguyên lớn hơn 0.');
+      }
+      const resOutcome = reserveNationResources(phase03Economy, {
+        matchVersion: nextVersion,
+        occurredAtUtc: nowUtc,
+        commandId: command.commandId,
+        reservationId: payload.reservationId,
+        nationId: payload.nationId,
+        refType: 'MANUAL',
+        refId: payload.refId,
+        basket: payload.basket,
+        note: payload.note,
+      });
+      if (!resOutcome.ok) {
+        return reject(state, resOutcome.code, resOutcome.reason);
+      }
+      phase03Economy = resOutcome.state;
+      drafts.push({
+        occurredAtUtc: nowUtc,
+        tieBreakPriority: 22,
+        tieBreakKey: payload.reservationId,
+        payload: {
+          type: 'RESOURCES_RESERVED',
+          reservationId: payload.reservationId,
+          nationId: payload.nationId,
+          refId: payload.refId,
+          basket: payload.basket,
+        },
+      });
+      break;
+    }
+
+    case 'COMMIT_RESERVATION': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Actor "${actor.actorId}" cannot commit reservation for "${payload.nationId}".`);
+      }
+      if (!phase03Economy) {
+        return reject(state, 'INVALID_TARGET', 'Phase 03 economic ledger is not initialized for this match.');
+      }
+      const existingRes = phase03Economy.reservations[payload.reservationId];
+      if (!existingRes) {
+        return reject(state, 'INVALID_TARGET', `Reservation "${payload.reservationId}" does not exist.`);
+      }
+      const consumed = payload.consumedBasket ?? existingRes.remainingReserved;
+      const settled = settleNationReservation(phase03Economy, {
+        matchVersion: nextVersion,
+        occurredAtUtc: nowUtc,
+        commandId: command.commandId,
+        reservationId: payload.reservationId,
+        nationId: payload.nationId,
+        consumed,
+        mode: 'COMMIT',
+        note: `Tất toán reservation ${payload.reservationId}`,
+      });
+      if (!settled.ok) {
+        return reject(state, settled.code, settled.reason);
+      }
+      phase03Economy = settled.state;
+      drafts.push({
+        occurredAtUtc: nowUtc,
+        tieBreakPriority: 23,
+        tieBreakKey: payload.reservationId,
+        payload: {
+          type: 'RESERVATION_SETTLED',
+          reservationId: payload.reservationId,
+          nationId: payload.nationId,
+          outcome: settled.outcome,
+          consumed: settled.consumed,
+          released: settled.released,
+        },
+      });
+      break;
+    }
+
+    case 'RELEASE_RESERVATION': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Actor "${actor.actorId}" cannot release reservation for "${payload.nationId}".`);
+      }
+      if (!phase03Economy) {
+        return reject(state, 'INVALID_TARGET', 'Phase 03 economic ledger is not initialized for this match.');
+      }
+      const consumed = payload.consumedBeforeCancel ?? {
+        money: asFixedPoint(0),
+        foreignExchange: asFixedPoint(0),
+        manpower: asFixedPoint(0),
+        food: asFixedPoint(0),
+        fuel: asFixedPoint(0),
+        supplies: asFixedPoint(0),
+        equipment: asFixedPoint(0),
+        medical: asFixedPoint(0),
+      };
+      const settled = settleNationReservation(phase03Economy, {
+        matchVersion: nextVersion,
+        occurredAtUtc: nowUtc,
+        commandId: command.commandId,
+        reservationId: payload.reservationId,
+        nationId: payload.nationId,
+        consumed,
+        mode: 'RELEASE',
+        note: `Hủy và hoàn trả phần chưa tiêu (${payload.reservationId})`,
+      });
+      if (!settled.ok) {
+        return reject(state, settled.code, settled.reason);
+      }
+      phase03Economy = settled.state;
+      drafts.push({
+        occurredAtUtc: nowUtc,
+        tieBreakPriority: 24,
+        tieBreakKey: payload.reservationId,
+        payload: {
+          type: 'RESERVATION_SETTLED',
+          reservationId: payload.reservationId,
+          nationId: payload.nationId,
+          outcome: settled.outcome,
+          consumed: settled.consumed,
+          released: settled.released,
+        },
+      });
+      break;
+    }
+
+    case 'UPDATE_BUDGET_POLICY': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Actor "${actor.actorId}" cannot update budget for "${payload.nationId}".`);
+      }
+      if (!phase03Economy) {
+        return reject(state, 'INVALID_TARGET', 'Phase 03 budget state is not initialized for this match.');
+      }
+      const currentBudget = phase03Economy.budgetsByNation[payload.nationId];
+      if (!currentBudget) {
+        return reject(state, 'INVALID_TARGET', `Nation "${payload.nationId}" has no budget state.`);
+      }
+
+      const taxChanged = payload.targetTaxRateBps !== currentBudget.targetTaxRateBps;
+      if (
+        taxChanged &&
+        currentBudget.taxCooldownUntilUtc !== null &&
+        (nowUtc as number) < (currentBudget.taxCooldownUntilUtc as number)
+      ) {
+        return reject(
+          state,
+          'INVALID_TIME_PROGRESSION',
+          `Thuế suất đang trong thời gian chờ điều chỉnh (hết hạn lúc ${new Date(currentBudget.taxCooldownUntilUtc as number).toISOString()}).`
+        );
+      }
+
+      const nextTaxEffectiveAt = taxChanged
+        ? asUtcEpochMs((nowUtc as number) + TAX_POLICY_DELAY_MS)
+        : currentBudget.taxChangeEffectiveAtUtc;
+      const nextCooldown = taxChanged
+        ? asUtcEpochMs((nowUtc as number) + TAX_CHANGE_COOLDOWN_MS)
+        : currentBudget.taxCooldownUntilUtc;
+
+      phase03Economy = {
+        ...phase03Economy,
+        budgetsByNation: {
+          ...phase03Economy.budgetsByNation,
+          [payload.nationId]: {
+            ...currentBudget,
+            targetTaxRateBps: payload.targetTaxRateBps,
+            taxChangeEffectiveAtUtc: nextTaxEffectiveAt,
+            taxCooldownUntilUtc: nextCooldown,
+            allocations: payload.allocations,
+          },
+        },
+      };
+
+      drafts.push({
+        occurredAtUtc: nowUtc,
+        tieBreakPriority: 26,
+        tieBreakKey: payload.nationId,
+        payload: {
+          type: 'BUDGET_POLICY_UPDATED',
+          nationId: payload.nationId,
+          effectiveTaxRateBps: currentBudget.effectiveTaxRateBps,
+          targetTaxRateBps: payload.targetTaxRateBps,
+          taxChangeEffectiveAtUtc: nextTaxEffectiveAt,
+          allocations: payload.allocations,
+        },
+      });
+      break;
+    }
+
+    case 'MANAGE_CREDIT': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Actor "${actor.actorId}" cannot manage credit for "${payload.nationId}".`);
+      }
+      if (!phase03Economy) {
+        return reject(state, 'INVALID_TARGET', 'Phase 03 credit facility is not initialized for this match.');
+      }
+      const stock = phase03Economy.stocksByNation[payload.nationId];
+      const budget = phase03Economy.budgetsByNation[payload.nationId];
+      if (!stock || !budget) {
+        return reject(state, 'INVALID_TARGET', `Nation "${payload.nationId}" does not exist in Phase 03 economy.`);
+      }
+
+      if (payload.action === 'DRAW') {
+        const headroom = (budget.creditLimitFp as number) - (stock.debtMoneyFp as number);
+        if ((payload.amountFp as number) > headroom) {
+          return reject(
+            state,
+            'INSUFFICIENT_RESOURCES',
+            `Vượt trần tín dụng hợp lệ: hạn mức còn lại ${headroom / 1000}, yêu cầu vay ${(payload.amountFp as number) / 1000}.`
+          );
+        }
+        const nextDebt = fpAdd(stock.debtMoneyFp, payload.amountFp);
+        const nextMoney = fpAdd(stock.available.money, payload.amountFp);
+        phase03Economy = {
+          ...phase03Economy,
+          stocksByNation: {
+            ...phase03Economy.stocksByNation,
+            [payload.nationId]: {
+              ...stock,
+              available: { ...stock.available, money: nextMoney },
+              debtMoneyFp: nextDebt,
+            },
+          },
+        };
+        phase03Economy = appendExtendedLedgerEntry(phase03Economy, {
+          matchVersion: nextVersion,
+          occurredAtUtc: nowUtc,
+          nationId: payload.nationId,
+          resource: 'money',
+          kind: 'DEBT_DRAW',
+          direction: 'CREDIT',
+          amountFp: payload.amountFp,
+          sourceAccount: 'CREDIT_FACILITY',
+          destinationAccount: `STOCK:${payload.nationId}`,
+          reservationId: null,
+          causedByCommandId: command.commandId,
+          note: 'Vay tín dụng ngân khố trong hạn mức cho phép',
+        });
+        drafts.push({
+          occurredAtUtc: nowUtc,
+          tieBreakPriority: 27,
+          tieBreakKey: payload.nationId,
+          payload: {
+            type: 'CREDIT_UPDATED',
+            nationId: payload.nationId,
+            action: 'DRAW',
+            amountFp: payload.amountFp,
+            debtAfterFp: nextDebt,
+            creditLimitFp: budget.creditLimitFp,
+          },
+        });
+      } else {
+        if ((stock.debtMoneyFp as number) <= 0) {
+          return reject(state, 'INVALID_TARGET', 'Quốc gia hiện không có khoản nợ công nào cần trả.');
+        }
+        if ((payload.amountFp as number) > (stock.debtMoneyFp as number)) {
+          return reject(
+            state,
+            'INVALID_TARGET',
+            `Số tiền trả nợ (${(payload.amountFp as number) / 1000}) lớn hơn dư nợ hiện tại (${(stock.debtMoneyFp as number) / 1000}).`
+          );
+        }
+        if ((payload.amountFp as number) > (stock.available.money as number)) {
+          return reject(
+            state,
+            'INSUFFICIENT_RESOURCES',
+            `Không đủ tiền mặt khả dụng để trả nợ (có ${(stock.available.money as number) / 1000}, cần ${(payload.amountFp as number) / 1000}).`
+          );
+        }
+        const nextDebt = fpSub(stock.debtMoneyFp, payload.amountFp);
+        const nextMoney = fpSub(stock.available.money, payload.amountFp);
+        phase03Economy = {
+          ...phase03Economy,
+          stocksByNation: {
+            ...phase03Economy.stocksByNation,
+            [payload.nationId]: {
+              ...stock,
+              available: { ...stock.available, money: nextMoney },
+              debtMoneyFp: nextDebt,
+            },
+          },
+        };
+        phase03Economy = appendExtendedLedgerEntry(phase03Economy, {
+          matchVersion: nextVersion,
+          occurredAtUtc: nowUtc,
+          nationId: payload.nationId,
+          resource: 'money',
+          kind: 'DEBT_REPAY',
+          direction: 'DEBIT',
+          amountFp: payload.amountFp,
+          sourceAccount: `STOCK:${payload.nationId}`,
+          destinationAccount: 'CREDIT_FACILITY',
+          reservationId: null,
+          causedByCommandId: command.commandId,
+          note: 'Thanh toán gốc nợ công ngân khố',
+        });
+        drafts.push({
+          occurredAtUtc: nowUtc,
+          tieBreakPriority: 27,
+          tieBreakKey: payload.nationId,
+          payload: {
+            type: 'CREDIT_UPDATED',
+            nationId: payload.nationId,
+            action: 'REPAY',
+            amountFp: payload.amountFp,
+            debtAfterFp: nextDebt,
+            creditLimitFp: budget.creditLimitFp,
+          },
+        });
+      }
+      break;
+    }
+
+    case 'QUEUE_CONSTRUCTION': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Actor "${actor.actorId}" cannot queue construction for "${payload.nationId}".`);
+      }
+      if (!phase03Economy) {
+        return reject(state, 'INVALID_TARGET', 'Phase 03 construction module is not initialized.');
+      }
+      if (phase03Economy.constructionQueue[payload.orderId]) {
+        return reject(state, 'DUPLICATE_ENTITY', `Construction order "${payload.orderId}" already exists.`);
+      }
+      const region = state.regions[payload.regionId];
+      if (!region) {
+        return reject(state, 'INVALID_TARGET', `Region "${payload.regionId}" does not exist.`);
+      }
+      if (region.controllerNationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Quốc gia "${payload.nationId}" không kiểm soát vùng "${payload.regionId}".`);
+      }
+
+      let targetTier: 1 | 2 | 3 = 1;
+      if (payload.targetFacilityId !== null) {
+        const fac = phase03Economy.facilities[payload.targetFacilityId];
+        if (!fac) {
+          return reject(state, 'INVALID_TARGET', `Facility "${payload.targetFacilityId}" does not exist.`);
+        }
+        if (fac.ownerNationId !== payload.nationId) {
+          return reject(state, 'FORBIDDEN_ACTION', `Quốc gia "${payload.nationId}" không sở hữu công trình "${fac.facilityId}".`);
+        }
+        if (fac.type !== payload.facilityType) {
+          return reject(state, 'INVALID_TARGET', `Loại công trình nâng cấp không khớp (${fac.type} !== ${payload.facilityType}).`);
+        }
+        if (fac.tier >= 3) {
+          return reject(state, 'INVALID_TARGET', `Công trình "${fac.facilityId}" đã đạt cấp tối đa (Cấp III).`);
+        }
+        const alreadyUpgrading = Object.values(phase03Economy.constructionQueue).some(
+          (c) =>
+            c.targetFacilityId === fac.facilityId &&
+            (c.status === 'QUEUED' || c.status === 'IN_PROGRESS' || c.status === 'PAUSED')
+        );
+        if (alreadyUpgrading) {
+          return reject(state, 'DUPLICATE_ENTITY', `Công trình "${fac.facilityId}" đang có lệnh nâng cấp trong hàng chờ.`);
+        }
+        targetTier = (fac.tier + 1) as 2 | 3;
+      }
+
+      const spec = FACILITY_CATALOG[payload.facilityType].tiers[targetTier];
+      const reservationId = buildOrderReservationId('con', payload.orderId);
+      const resOutcome = reserveNationResources(phase03Economy, {
+        matchVersion: nextVersion,
+        occurredAtUtc: nowUtc,
+        commandId: command.commandId,
+        reservationId,
+        nationId: payload.nationId,
+        refType: 'CONSTRUCTION',
+        refId: payload.orderId,
+        basket: spec.buildCost,
+        note: `Tạm giữ chi phí xây/nâng cấp ${FACILITY_CATALOG[payload.facilityType].nameVi} cấp ${targetTier}`,
+      });
+      if (!resOutcome.ok) {
+        return reject(state, resOutcome.code, resOutcome.reason);
+      }
+
+      const completesAtUtc = asUtcEpochMs((nowUtc as number) + spec.buildDurationMs);
+      phase03Economy = {
+        ...resOutcome.state,
+        constructionQueue: {
+          ...resOutcome.state.constructionQueue,
+          [payload.orderId]: {
+            orderId: payload.orderId,
+            ownerNationId: payload.nationId,
+            regionId: payload.regionId,
+            targetFacilityId: payload.targetFacilityId,
+            facilityType: payload.facilityType,
+            targetTier,
+            reservationId,
+            startsAtUtc: nowUtc,
+            durationMs: spec.buildDurationMs,
+            elapsedActiveMs: 0,
+            completesAtUtc,
+            status: 'IN_PROGRESS',
+            pauseReason: null,
+            completedAtUtc: null,
+          },
+        },
+      };
+
+      drafts.push({
+        occurredAtUtc: nowUtc,
+        tieBreakPriority: 61,
+        tieBreakKey: payload.orderId,
+        payload: {
+          type: 'CONSTRUCTION_QUEUED',
+          orderId: payload.orderId,
+          nationId: payload.nationId,
+          regionId: payload.regionId,
+          facilityType: payload.facilityType,
+          targetTier,
+          completesAtUtc,
+        },
+      });
+      break;
+    }
+
+    case 'CANCEL_CONSTRUCTION': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Actor "${actor.actorId}" cannot cancel construction for "${payload.nationId}".`);
+      }
+      if (!phase03Economy) {
+        return reject(state, 'INVALID_TARGET', 'Phase 03 construction module is not initialized.');
+      }
+      const order = phase03Economy.constructionQueue[payload.orderId];
+      if (!order) {
+        return reject(state, 'INVALID_TARGET', `Construction order "${payload.orderId}" does not exist.`);
+      }
+      if (order.ownerNationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Quốc gia "${payload.nationId}" không sở hữu lệnh xây dựng "${order.orderId}".`);
+      }
+      if (order.status === 'COMPLETED' || order.status === 'CANCELLED') {
+        return reject(state, 'INVALID_TARGET', `Lệnh xây dựng "${order.orderId}" đã ${order.status}.`);
+      }
+      const res = phase03Economy.reservations[order.reservationId];
+      if (!res || res.status !== 'ACTIVE') {
+        return reject(state, 'INVALID_TARGET', `Reservation "${order.reservationId}" không còn hiệu lực.`);
+      }
+
+      const elapsedMs = Math.max(
+        order.elapsedActiveMs,
+        Math.min(order.durationMs, (nowUtc as number) - (order.startsAtUtc as number))
+      );
+      const { consumed } = computeProRataCancellationSplit(
+        res.remainingReserved,
+        elapsedMs,
+        order.durationMs
+      );
+      const settled = settleNationReservation(phase03Economy, {
+        matchVersion: nextVersion,
+        occurredAtUtc: nowUtc,
+        commandId: command.commandId,
+        reservationId: order.reservationId,
+        nationId: payload.nationId,
+        consumed,
+        mode: 'RELEASE',
+        note: `Hủy xây dựng ${FACILITY_CATALOG[order.facilityType].nameVi} cấp ${order.targetTier}`,
+      });
+      if (!settled.ok) {
+        return reject(state, settled.code, settled.reason);
+      }
+      phase03Economy = {
+        ...settled.state,
+        constructionQueue: {
+          ...settled.state.constructionQueue,
+          [order.orderId]: {
+            ...order,
+            status: 'CANCELLED',
+            pauseReason: 'Đã hủy bởi người chơi',
+          },
+        },
+      };
+
+      drafts.push({
+        occurredAtUtc: nowUtc,
+        tieBreakPriority: 62,
+        tieBreakKey: order.orderId,
+        payload: {
+          type: 'CONSTRUCTION_CANCELLED',
+          orderId: order.orderId,
+          nationId: payload.nationId,
+          consumed: settled.consumed,
+          refunded: settled.released,
+        },
+      });
+      break;
+    }
+
+    case 'QUEUE_PRODUCTION': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Actor "${actor.actorId}" cannot queue production for "${payload.nationId}".`);
+      }
+      if (!phase03Economy) {
+        return reject(state, 'INVALID_TARGET', 'Phase 03 production module is not initialized.');
+      }
+      if (phase03Economy.productionQueue[payload.orderId]) {
+        return reject(state, 'DUPLICATE_ENTITY', `Production order "${payload.orderId}" already exists.`);
+      }
+      const fac = phase03Economy.facilities[payload.facilityId];
+      if (!fac) {
+        return reject(state, 'INVALID_TARGET', `Facility "${payload.facilityId}" does not exist.`);
+      }
+      if (fac.ownerNationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Quốc gia "${payload.nationId}" không sở hữu nhà máy "${fac.facilityId}".`);
+      }
+      const spec = FACILITY_CATALOG[fac.type].tiers[fac.tier];
+      if (!spec.productionRecipe) {
+        return reject(
+          state,
+          'INVALID_TARGET',
+          `${FACILITY_CATALOG[fac.type].nameVi} là công trình cung cấp công suất nền, không có công thức đặt lô sản xuất.`
+        );
+      }
+
+      const recipe = spec.productionRecipe;
+      const inputCost = scaleExtendedBasket(recipe.inputPerBatch, payload.batchCount);
+      const outputAmountFp = asFixedPoint((recipe.outputPerBatchFp as number) * payload.batchCount);
+      const durationMs = recipe.durationPerBatchMs * payload.batchCount;
+      const reservationId = buildOrderReservationId('prd', payload.orderId);
+
+      const resOutcome = reserveNationResources(phase03Economy, {
+        matchVersion: nextVersion,
+        occurredAtUtc: nowUtc,
+        commandId: command.commandId,
+        reservationId,
+        nationId: payload.nationId,
+        refType: 'PRODUCTION',
+        refId: payload.orderId,
+        basket: inputCost,
+        note: `Tạm giữ nguyên liệu sản xuất ${payload.batchCount} lô tại ${FACILITY_CATALOG[fac.type].nameVi}`,
+      });
+      if (!resOutcome.ok) {
+        return reject(state, resOutcome.code, resOutcome.reason);
+      }
+
+      const completesAtUtc = asUtcEpochMs((nowUtc as number) + durationMs);
+      const isPaused = fac.operationalStatus !== 'ACTIVE';
+      phase03Economy = {
+        ...resOutcome.state,
+        productionQueue: {
+          ...resOutcome.state.productionQueue,
+          [payload.orderId]: {
+            orderId: payload.orderId,
+            ownerNationId: payload.nationId,
+            facilityId: fac.facilityId,
+            regionId: fac.regionId,
+            outputResource: recipe.outputResource,
+            outputAmountFp,
+            inputCost,
+            reservationId,
+            batchCount: payload.batchCount,
+            startsAtUtc: nowUtc,
+            durationMs,
+            elapsedActiveMs: 0,
+            completesAtUtc,
+            status: isPaused ? 'PAUSED' : 'IN_PROGRESS',
+            pauseReason: isPaused ? (fac.pauseReason ?? `Nhà máy đang ${fac.operationalStatus}`) : null,
+            completedAtUtc: null,
+          },
+        },
+      };
+
+      drafts.push({
+        occurredAtUtc: nowUtc,
+        tieBreakPriority: 63,
+        tieBreakKey: payload.orderId,
+        payload: {
+          type: 'PRODUCTION_QUEUED',
+          orderId: payload.orderId,
+          nationId: payload.nationId,
+          facilityId: fac.facilityId,
+          outputResource: recipe.outputResource,
+          outputAmountFp,
+          completesAtUtc,
+        },
+      });
+      break;
+    }
+
+    case 'CANCEL_PRODUCTION': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Actor "${actor.actorId}" cannot cancel production for "${payload.nationId}".`);
+      }
+      if (!phase03Economy) {
+        return reject(state, 'INVALID_TARGET', 'Phase 03 production module is not initialized.');
+      }
+      const order = phase03Economy.productionQueue[payload.orderId];
+      if (!order) {
+        return reject(state, 'INVALID_TARGET', `Production order "${payload.orderId}" does not exist.`);
+      }
+      if (order.ownerNationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Quốc gia "${payload.nationId}" không sở hữu lệnh sản xuất "${order.orderId}".`);
+      }
+      if (order.status === 'COMPLETED' || order.status === 'CANCELLED') {
+        return reject(state, 'INVALID_TARGET', `Lệnh sản xuất "${order.orderId}" đã ${order.status}.`);
+      }
+      const res = phase03Economy.reservations[order.reservationId];
+      if (!res || res.status !== 'ACTIVE') {
+        return reject(state, 'INVALID_TARGET', `Reservation "${order.reservationId}" không còn hiệu lực.`);
+      }
+
+      const elapsedMs = Math.max(
+        order.elapsedActiveMs,
+        order.status === 'PAUSED'
+          ? order.elapsedActiveMs
+          : Math.min(order.durationMs, (nowUtc as number) - (order.startsAtUtc as number))
+      );
+      const { consumed } = computeProRataCancellationSplit(
+        res.remainingReserved,
+        elapsedMs,
+        order.durationMs
+      );
+      const settled = settleNationReservation(phase03Economy, {
+        matchVersion: nextVersion,
+        occurredAtUtc: nowUtc,
+        commandId: command.commandId,
+        reservationId: order.reservationId,
+        nationId: payload.nationId,
+        consumed,
+        mode: 'RELEASE',
+        note: `Hủy lô sản xuất ${order.orderId}`,
+      });
+      if (!settled.ok) {
+        return reject(state, settled.code, settled.reason);
+      }
+      phase03Economy = {
+        ...settled.state,
+        productionQueue: {
+          ...settled.state.productionQueue,
+          [order.orderId]: {
+            ...order,
+            status: 'CANCELLED',
+            pauseReason: 'Đã hủy bởi người chơi',
+          },
+        },
+      };
+
+      drafts.push({
+        occurredAtUtc: nowUtc,
+        tieBreakPriority: 64,
+        tieBreakKey: order.orderId,
+        payload: {
+          type: 'PRODUCTION_CANCELLED',
+          orderId: order.orderId,
+          nationId: payload.nationId,
+          consumed: settled.consumed,
+          refunded: settled.released,
+        },
+      });
+      break;
+    }
+
+    case 'TOGGLE_FACILITY_PAUSE': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Actor "${actor.actorId}" cannot toggle facility for "${payload.nationId}".`);
+      }
+      if (!phase03Economy) {
+        return reject(state, 'INVALID_TARGET', 'Phase 03 facility module is not initialized.');
+      }
+      const fac = phase03Economy.facilities[payload.facilityId];
+      if (!fac) {
+        return reject(state, 'INVALID_TARGET', `Facility "${payload.facilityId}" does not exist.`);
+      }
+      if (fac.ownerNationId !== payload.nationId) {
+        return reject(state, 'FORBIDDEN_ACTION', `Quốc gia "${payload.nationId}" không sở hữu công trình "${fac.facilityId}".`);
+      }
+
+      const nextStatus = payload.paused ? 'PAUSED_MANUAL' : 'ACTIVE';
+      const nextReason = payload.paused ? 'Tạm dừng thủ công bởi người chơi' : null;
+      phase03Economy = {
+        ...phase03Economy,
+        facilities: {
+          ...phase03Economy.facilities,
+          [fac.facilityId]: {
+            ...fac,
+            manualPaused: payload.paused,
+            operationalStatus: nextStatus,
+            efficiencyBps: payload.paused ? 0 : 10000,
+            pauseReason: nextReason,
+          },
+        },
+      };
+
+      drafts.push({
+        occurredAtUtc: nowUtc,
+        tieBreakPriority: 66,
+        tieBreakKey: fac.facilityId,
+        payload: {
+          type: 'FACILITY_STATUS_CHANGED',
+          facilityId: fac.facilityId,
+          nationId: payload.nationId,
+          operationalStatus: nextStatus,
+          pauseReason: nextReason,
+        },
+      });
+      break;
+    }
   }
 
-  const nextVersion = state.version + 1;
   const sortedDrafts = sortPendingEventDrafts(drafts);
 
   let nextEventSeq = state.eventSequence;
@@ -671,6 +1683,9 @@ export function reduceCommand(
     policies,
     treaties,
     resourceAudit,
+    ...(economicState ? { economicState } : {}),
+    ...(economicLedger ? { economicLedger } : {}),
+    ...(phase03Economy ? { phase03Economy } : {}),
     eventSequence: nextEventSeq,
     events: [...state.events, ...emittedEvents],
     idempotencyReceipts: {

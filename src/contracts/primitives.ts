@@ -28,6 +28,11 @@ export const EventIdSchema = makeIdSchema('evt', 'EventId');
 export const JobIdSchema = makeIdSchema('job', 'JobId');
 export const PolicyIdSchema = makeIdSchema('pol', 'PolicyId');
 export const TreatyIdSchema = makeIdSchema('trt', 'TreatyId');
+export const LedgerTransactionIdSchema = makeIdSchema('txn', 'LedgerTransactionId');
+export const FacilityIdSchema = makeIdSchema('fac', 'FacilityId');
+export const ReservationIdSchema = makeIdSchema('res', 'ReservationId');
+export const ConstructionOrderIdSchema = makeIdSchema('con', 'ConstructionOrderId');
+export const ProductionOrderIdSchema = makeIdSchema('prd', 'ProductionOrderId');
 
 export const IdempotencyKeySchema = z
   .string()
@@ -46,6 +51,11 @@ export type EventId = z.infer<typeof EventIdSchema>;
 export type JobId = z.infer<typeof JobIdSchema>;
 export type PolicyId = z.infer<typeof PolicyIdSchema>;
 export type TreatyId = z.infer<typeof TreatyIdSchema>;
+export type LedgerTransactionId = z.infer<typeof LedgerTransactionIdSchema>;
+export type FacilityId = z.infer<typeof FacilityIdSchema>;
+export type ReservationId = z.infer<typeof ReservationIdSchema>;
+export type ConstructionOrderId = z.infer<typeof ConstructionOrderIdSchema>;
+export type ProductionOrderId = z.infer<typeof ProductionOrderIdSchema>;
 export type IdempotencyKey = z.infer<typeof IdempotencyKeySchema>;
 
 /**

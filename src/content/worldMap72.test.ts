@@ -310,5 +310,58 @@ describe('P02-05 Realistic Geographic Map Foundation', () => {
     assert.ok(transportKinds.has('RAILWAY'));
     assert.ok(transportKinds.has('RIVER_CROSSING'));
   });
+
+  it('maintains 100% parity between displayed GeoJSON map and authoritative gameplay MatchState (72 regions, 98 corridors, 24 cities)', () => {
+    const authState = createWorld72MatchState({
+      matchId: 'mch_parity_check_01',
+      title: 'Display vs Authoritative Parity Audit',
+      seed: 195507,
+      createdAtUtc: 1_750_000_000_000,
+      mode: 'PRODUCTION_REALTIME',
+    });
+
+    assert.equal(WORLD_MAP_72_GEOJSON.features.length, 72);
+    assert.equal(Object.keys(authState.regions).length, 72);
+    assert.equal(WORLD_GEO_LAYERS.transportCorridors.length, 98);
+    assert.equal(WORLD_GEO_LAYERS.cities.length, 24);
+
+    for (const feature of WORLD_MAP_72_GEOJSON.features) {
+      const p = feature.properties;
+      const authRegion = authState.regions[p.regionId];
+      assert.ok(authRegion, `Missing authoritative region for displayed feature ${p.regionId}`);
+      assert.equal(authRegion.regionId, p.regionId);
+      assert.equal(authRegion.code, p.code);
+      assert.equal(authRegion.name, p.name);
+      assert.equal(authRegion.controllerNationId, p.initialControllerNationId);
+      assert.equal(authRegion.supplyCapacityFp, p.supplyCapacityFp);
+      assert.equal(authRegion.infrastructureFp, p.infrastructureFp);
+      assert.equal(authRegion.economicOutputFp, p.economicOutputFp);
+      assert.deepEqual(
+        [...authRegion.adjacentRegionIds].sort(),
+        [...p.adjacentRegionIds].sort(),
+        `Adjacency drift detected on ${p.regionId}`
+      );
+    }
+
+    // Verify all 98 transport corridors strictly connect valid adjacent authoritative regions
+    for (const corridor of WORLD_GEO_LAYERS.transportCorridors) {
+      const fromRegion = authState.regions[corridor.fromRegionId];
+      const toRegion = authState.regions[corridor.toRegionId];
+      assert.ok(fromRegion && toRegion, `Corridor ${corridor.id} references unknown authoritative region`);
+      assert.ok(
+        fromRegion.adjacentRegionIds.includes(corridor.toRegionId),
+        `Corridor ${corridor.id} is not present in authoritative adjacency for ${corridor.fromRegionId}`
+      );
+    }
+
+    // Verify all 24 displayed cities map to valid authoritative regions
+    for (const city of WORLD_GEO_LAYERS.cities) {
+      assert.ok(
+        authState.regions[city.regionId],
+        `Displayed city ${city.name} maps to unknown authoritative region ${city.regionId}`
+      );
+    }
+  });
 });
+
 

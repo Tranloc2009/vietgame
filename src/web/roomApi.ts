@@ -1,14 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  BudgetWarningCode,
   Command,
+  ConstructionQueueItem,
   DomainEvent,
+  EconomicLedgerEntry,
+  ExtendedLedgerEntry,
+  ExtendedResourceBasket,
+  ExtendedResourceType,
+  FacilityInstance,
+  FacilityTier,
+  FacilityType,
   FilteredClientMatchView,
+  FiscalStatus,
+  FixedPointInt,
   HumanSlot,
   MatchDeltaEnvelope,
   MatchRoomSummary,
+  NationBudgetState,
+  NationExtendedStock,
+  NationId,
+  ProductionOrder,
   PublicUser,
   RegionGeoMetadata,
+  RegionId,
+  ResourceLedger,
+  ResourceReservation,
+  SignedExtendedResourceBasket,
+  SignedFixedPointInt,
   TransportCorridor,
+  UtcEpochMs,
   WorldCity,
   WorldPeak,
 } from '../contracts';
@@ -163,6 +184,141 @@ export interface RoomReplayReport {
   readonly replayedHash: string;
   readonly replayedCommandCount: number;
   readonly version: number;
+}
+
+export interface ClientSignedResourceLedger {
+  readonly food: SignedFixedPointInt;
+  readonly industrial: SignedFixedPointInt;
+  readonly treasury: SignedFixedPointInt;
+  readonly manpower: SignedFixedPointInt;
+  readonly politicalCapital: SignedFixedPointInt;
+}
+
+export interface ClientRegionEconomicContribution {
+  readonly regionId: RegionId;
+  readonly name: string;
+  readonly economicOutputFp: FixedPointInt;
+  readonly infrastructureFp: FixedPointInt;
+  readonly supplyCapacityFp: FixedPointInt;
+  readonly dailyContribution: ResourceLedger;
+}
+
+export interface ClientNationEconomicForecast {
+  readonly nationId: NationId;
+  readonly nationName: string;
+  readonly controlledRegionCount: number;
+  readonly activeUnitCount: number;
+  readonly activePolicyCount: number;
+  readonly taxRateBps: number;
+  readonly settlementIntervalMs: number;
+  readonly lastSettlementUtc: UtcEpochMs;
+  readonly nextSettlementUtc: UtcEpochMs;
+  readonly currentBalance: ResourceLedger;
+  readonly stockpileCaps: ResourceLedger;
+  readonly grossDaily: ResourceLedger;
+  readonly upkeepDaily: ResourceLedger;
+  readonly netDailySigned: ClientSignedResourceLedger;
+  readonly grossPerCycle: ResourceLedger;
+  readonly upkeepPerCycle: ResourceLedger;
+  readonly topRegions: readonly ClientRegionEconomicContribution[];
+}
+
+export interface ClientPhase03CapacitySummary {
+  readonly laborCapacityFp: FixedPointInt;
+  readonly laborUsedFp: FixedPointInt;
+  readonly energyCapacityFp: FixedPointInt;
+  readonly energyUsedFp: FixedPointInt;
+}
+
+export interface ClientPhase03FiscalForecast24h {
+  readonly taxBaseDailyFp: FixedPointInt;
+  readonly effectiveTaxRateBps: number;
+  readonly targetTaxRateBps: number;
+  readonly taxComplianceBps: number;
+  readonly effectiveYieldBps: number;
+  readonly taxRevenueDailyFp: FixedPointInt;
+  readonly mandatoryUpkeepDailyFp: FixedPointInt;
+  readonly debtInterestDailyFp: FixedPointInt;
+  readonly totalMandatoryDailyFp: FixedPointInt;
+  readonly netMoneyDailySignedFp: number;
+  readonly projectedMoney24hFp: FixedPointInt;
+  readonly projectedDebt24hFp: FixedPointInt;
+  readonly hoursUntilCashDepletion: number | null;
+  readonly creditHeadroomFp: FixedPointInt;
+  readonly activityThrottleBps: number;
+  readonly fiscalStatus: FiscalStatus;
+  readonly warnings: readonly { readonly code: BudgetWarningCode; readonly messageVi: string }[];
+}
+
+export interface ClientPhase03FacilityTierSpec {
+  readonly tier: FacilityTier;
+  readonly buildDurationMs: number;
+  readonly buildCost: ExtendedResourceBasket;
+  readonly laborCapacityProvidedFp: FixedPointInt;
+  readonly energyCapacityProvidedFp: FixedPointInt;
+  readonly laborDemandFp: FixedPointInt;
+  readonly energyDemandFp: FixedPointInt;
+  readonly storageCapBonus: ExtendedResourceBasket;
+  readonly hourlyInputs: ExtendedResourceBasket;
+  readonly hourlyOutputs: ExtendedResourceBasket;
+  readonly productionRecipe: {
+    readonly outputResource: ExtendedResourceType;
+    readonly outputPerBatchFp: FixedPointInt;
+    readonly inputPerBatch: ExtendedResourceBasket;
+    readonly durationPerBatchMs: number;
+    readonly labelVi: string;
+  } | null;
+}
+
+export interface ClientPhase03CatalogEntry {
+  readonly type: FacilityType;
+  readonly nameVi: string;
+  readonly roleSummaryVi: string;
+  readonly tiers: Readonly<Record<FacilityTier, ClientPhase03FacilityTierSpec>>;
+}
+
+export interface ClientPhase03ReconciliationRow {
+  readonly resource: ExtendedResourceType;
+  readonly totalActiveAvailableFp: FixedPointInt;
+  readonly totalReservedFp: FixedPointInt;
+  readonly totalBurnedFp: FixedPointInt;
+  readonly totalInitialFp: FixedPointInt;
+  readonly totalMintedFp: FixedPointInt;
+  readonly totalDebtFp: FixedPointInt;
+  readonly reconciled: boolean;
+}
+
+export interface ClientPhase03NationReport {
+  readonly nationId: NationId;
+  readonly stock: NationExtendedStock;
+  readonly dailyGross: ExtendedResourceBasket;
+  readonly dailyUpkeep: ExtendedResourceBasket;
+  readonly dailyNetSigned: SignedExtendedResourceBasket;
+  readonly capacity: ClientPhase03CapacitySummary;
+  readonly budget: NationBudgetState;
+  readonly fiscalForecast24h: ClientPhase03FiscalForecast24h;
+  readonly facilities: readonly FacilityInstance[];
+  readonly constructionQueue: readonly ConstructionQueueItem[];
+  readonly productionQueue: readonly ProductionOrder[];
+  readonly activeReservations: readonly ResourceReservation[];
+  readonly ledger: readonly ExtendedLedgerEntry[];
+  readonly reconciliation: {
+    readonly allReconciled: boolean;
+    readonly rows: readonly ClientPhase03ReconciliationRow[];
+  };
+  readonly catalog: Readonly<Record<FacilityType, ClientPhase03CatalogEntry>>;
+}
+
+export interface RoomEconomyResponse {
+  readonly ok: true;
+  readonly matchId: string;
+  readonly version: number;
+  readonly slot: HumanSlot;
+  readonly nationId: NationId;
+  readonly forecast: ClientNationEconomicForecast;
+  readonly ledger: readonly EconomicLedgerEntry[];
+  readonly phase03: ClientPhase03NationReport | null;
+  readonly serverUtc: UtcEpochMs;
 }
 
 async function parseJsonOrThrow<T>(res: Response): Promise<T> {
@@ -359,6 +515,17 @@ export async function fetchRoomBackupSummary(
   });
   const data = await parseJsonOrThrow<{ ok: true; summary: BackupAuditSummary }>(res);
   return data.summary;
+}
+
+export async function fetchRoomEconomy(
+  token: string,
+  matchId: string
+): Promise<RoomEconomyResponse> {
+  const res = await fetch(`/api/rooms/${encodeURIComponent(matchId)}/economy`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+  return parseJsonOrThrow<RoomEconomyResponse>(res);
 }
 
 export interface RoomSyncTelemetry {

@@ -27,7 +27,12 @@ import {
   WorldPeak,
   WorldPeakSchema,
 } from '../contracts/rooms';
-import { assertSimulationInvariants, normalizeSeed } from '../simulation';
+import {
+  assertSimulationInvariants,
+  createInitialEconomicMatchState,
+  createInitialPhase03EconomyState,
+  normalizeSeed,
+} from '../simulation';
 import rawWorldData from './geo/vietnam72WorldData.json';
 
 export const WORLD_MAP_METADATA = {
@@ -327,6 +332,7 @@ export function createWorld72MatchState(options: {
       supplyCapacityFp: p.supplyCapacityFp,
       influenceFp: wholeUnitsToFixedPoint(65),
       infrastructureFp: p.infrastructureFp,
+      economicOutputFp: p.economicOutputFp,
     };
   }
 
@@ -392,6 +398,53 @@ export function createWorld72MatchState(options: {
   const highlandCapital = RegionIdSchema.parse('reg_vn_38');
   const borderCapital = RegionIdSchema.parse('reg_vn_01');
 
+  const nationsRecord = {
+    [WORLD_NATIONS.north]: {
+      nationId: WORLD_NATIONS.north,
+      slot: 'NORTH' as const,
+      code: 'NDR',
+      name: 'Liên Minh Phương Bắc (Hư cấu)',
+      capitalRegionId: northCapital,
+      resources: northResources,
+      stabilityFp: wholeUnitsToFixedPoint(68),
+      legitimacyFp: wholeUnitsToFixedPoint(71),
+      fictionalDisclaimer: 'ALTERNATE_HISTORY_ABSTRACT_GAMEPLAY' as const,
+    },
+    [WORLD_NATIONS.south]: {
+      nationId: WORLD_NATIONS.south,
+      slot: 'SOUTH' as const,
+      code: 'SRP',
+      name: 'Cộng Hòa Phương Nam (Hư cấu)',
+      capitalRegionId: southCapital,
+      resources: southResources,
+      stabilityFp: wholeUnitsToFixedPoint(66),
+      legitimacyFp: wholeUnitsToFixedPoint(70),
+      fictionalDisclaimer: 'ALTERNATE_HISTORY_ABSTRACT_GAMEPLAY' as const,
+    },
+    [WORLD_NATIONS.npcHighland]: {
+      nationId: WORLD_NATIONS.npcHighland,
+      slot: 'NPC' as const,
+      code: 'HAC',
+      name: 'Hội Đồng Cao Nguyên Độc Lập (NPC)',
+      capitalRegionId: highlandCapital,
+      resources: npcHighlandResources,
+      stabilityFp: wholeUnitsToFixedPoint(74),
+      legitimacyFp: wholeUnitsToFixedPoint(72),
+      fictionalDisclaimer: 'ALTERNATE_HISTORY_ABSTRACT_GAMEPLAY' as const,
+    },
+    [WORLD_NATIONS.npcBorder]: {
+      nationId: WORLD_NATIONS.npcBorder,
+      slot: 'NPC' as const,
+      code: 'BDR',
+      name: 'Liên Minh Biên Giới Độc Lập (NPC)',
+      capitalRegionId: borderCapital,
+      resources: npcBorderResources,
+      stabilityFp: wholeUnitsToFixedPoint(71),
+      legitimacyFp: wholeUnitsToFixedPoint(68),
+      fictionalDisclaimer: 'ALTERNATE_HISTORY_ABSTRACT_GAMEPLAY' as const,
+    },
+  };
+
   const state: MatchState = MatchStateSchema.parse({
     schemaVersion: CONTRACT_SCHEMA_VERSION,
     matchId,
@@ -453,52 +506,7 @@ export function createWorld72MatchState(options: {
         active: true,
       },
     },
-    nations: {
-      [WORLD_NATIONS.north]: {
-        nationId: WORLD_NATIONS.north,
-        slot: 'NORTH',
-        code: 'NDR',
-        name: 'Liên Minh Phương Bắc (Hư cấu)',
-        capitalRegionId: northCapital,
-        resources: northResources,
-        stabilityFp: wholeUnitsToFixedPoint(68),
-        legitimacyFp: wholeUnitsToFixedPoint(71),
-        fictionalDisclaimer: 'ALTERNATE_HISTORY_ABSTRACT_GAMEPLAY',
-      },
-      [WORLD_NATIONS.south]: {
-        nationId: WORLD_NATIONS.south,
-        slot: 'SOUTH',
-        code: 'SRP',
-        name: 'Cộng Hòa Phương Nam (Hư cấu)',
-        capitalRegionId: southCapital,
-        resources: southResources,
-        stabilityFp: wholeUnitsToFixedPoint(66),
-        legitimacyFp: wholeUnitsToFixedPoint(70),
-        fictionalDisclaimer: 'ALTERNATE_HISTORY_ABSTRACT_GAMEPLAY',
-      },
-      [WORLD_NATIONS.npcHighland]: {
-        nationId: WORLD_NATIONS.npcHighland,
-        slot: 'NPC',
-        code: 'HAC',
-        name: 'Hội Đồng Cao Nguyên Độc Lập (NPC)',
-        capitalRegionId: highlandCapital,
-        resources: npcHighlandResources,
-        stabilityFp: wholeUnitsToFixedPoint(74),
-        legitimacyFp: wholeUnitsToFixedPoint(72),
-        fictionalDisclaimer: 'ALTERNATE_HISTORY_ABSTRACT_GAMEPLAY',
-      },
-      [WORLD_NATIONS.npcBorder]: {
-        nationId: WORLD_NATIONS.npcBorder,
-        slot: 'NPC',
-        code: 'BDR',
-        name: 'Liên Minh Biên Giới Độc Lập (NPC)',
-        capitalRegionId: borderCapital,
-        resources: npcBorderResources,
-        stabilityFp: wholeUnitsToFixedPoint(71),
-        legitimacyFp: wholeUnitsToFixedPoint(68),
-        fictionalDisclaimer: 'ALTERNATE_HISTORY_ABSTRACT_GAMEPLAY',
-      },
-    },
+    nations: nationsRecord,
     regions,
     units: {
       [UnitIdSchema.parse('unt_north_hq_01')]: {
@@ -537,6 +545,9 @@ export function createWorld72MatchState(options: {
       burnedTotal: zeroLedger,
       mintedTotal: zeroLedger,
     },
+    economicState: createInitialEconomicMatchState(nationsRecord, createdAtUtc),
+    economicLedger: [],
+    phase03Economy: createInitialPhase03EconomyState(nationsRecord, regions, createdAtUtc),
     eventSequence: 0,
     events: [],
     idempotencyReceipts: {},
