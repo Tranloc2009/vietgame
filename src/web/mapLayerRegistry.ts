@@ -6,14 +6,46 @@ import {
   TerrainKind,
   TransportKind,
 } from '../contracts';
+import { getFactionVisual, MAP_TOKENS } from './map/designTokens';
 import { WorldMapFeature } from './roomApi';
+
+/**
+ * Map Mode Registry 2.0 (P02-06G).
+ * Preserves 100% backwards compatibility with P02-04 & P02-05 exports while adding
+ * formal mode metadata (data requirements, visibility, authorization, color scale,
+ * zoom behavior, layer ordering, fallback behavior, and update strategy).
+ */
+
+export interface LegendItem {
+  readonly label: string;
+  readonly color: string;
+}
 
 export interface ActiveLayerDescriptor {
   readonly id: MapLayerMode;
   readonly label: string;
+  readonly shortLabel: string;
+  readonly shortcutKey: '1' | '2' | '3' | '4';
   readonly shortDesc: string;
   readonly implemented: true;
+  readonly dataRequirements: readonly string[];
+  readonly visibilityRules: string;
+  readonly authorizationRules: 'PUBLIC_WORLD_OR_FILTERED_MATCH' | 'PUBLIC_WORLD_GEOGRAPHY';
+  readonly terrainBlendOpacity: number;
+  readonly zoomBehavior: string;
+  readonly layerOrdering: readonly string[];
+  readonly fallbackBehavior: string;
+  readonly updateStrategy: 'INCREMENTAL_MATCH_DELTA' | 'STATIC_GEO_CACHE';
+  readonly colorScale: readonly LegendItem[];
 }
+
+export type ExtendedFutureMapMode =
+  | PlannedFutureLayerMode
+  | 'POPULATION'
+  | 'INTELLIGENCE'
+  | 'DIPLOMATIC_RELATIONS'
+  | 'SUPPLY'
+  | 'CONSTRUCTION';
 
 export interface PlannedLayerDescriptor {
   readonly id: PlannedFutureLayerMode;
@@ -22,44 +54,238 @@ export interface PlannedLayerDescriptor {
   readonly implemented: false;
 }
 
+export interface FutureMapModeSpec {
+  readonly id: ExtendedFutureMapMode;
+  readonly label: string;
+  readonly targetPhase: string;
+  readonly dataRequirements: readonly string[];
+  readonly authorizationRules: 'SERVER_FILTERED_FOG_OF_WAR' | 'SERVER_AUTHORITATIVE_ENGINE';
+  readonly implemented: false;
+}
+
 export const ACTIVE_MAP_LAYERS: readonly ActiveLayerDescriptor[] = [
   {
     id: 'POLITICAL',
     label: 'Chính trị',
-    shortDesc: 'Kiểm soát lãnh thổ 2 phe Bắc/Nam & 2 chính quyền NPC độc lập',
+    shortLabel: 'Chính trị',
+    shortcutKey: '1',
+    shortDesc: 'Chủ quyền lãnh thổ 2 phe Bắc/Nam & 2 chính quyền NPC độc lập (để lộ địa hình nền)',
     implemented: true,
+    dataRequirements: ['worldMap72.geojson', 'match.regions[].controllerNationId'],
+    visibilityRules: 'Hiển thị ở mọi cấp zoom L1–L5; phủ bán trong suốt để giữ nguyên khối địa hình SRTM',
+    authorizationRules: 'PUBLIC_WORLD_OR_FILTERED_MATCH',
+    terrainBlendOpacity: 0.62,
+    zoomBehavior: 'L1–L2 ưu tiên biên giới quốc gia; L3–L5 hiện rõ ranh giới nội vùng và mã vùng',
+    layerOrdering: [
+      'ocean',
+      'context-countries',
+      'terrain-base',
+      'political-fill',
+      'srtm-hillshade',
+      'internal-borders',
+      'national-borders',
+      'rivers',
+      'transport',
+      'cities',
+    ],
+    fallbackBehavior: 'SVG vector sử dụng cùng bảng màu chủ quyền và ranh giới quốc gia động',
+    updateStrategy: 'INCREMENTAL_MATCH_DELTA',
+    colorScale: [
+      { label: 'Phương Bắc (Human)', color: MAP_TOKENS.factions.nat_north_dir.fill },
+      { label: 'Phương Nam (Human)', color: MAP_TOKENS.factions.nat_south_rep.fill },
+      { label: 'Cao Nguyên (NPC)', color: MAP_TOKENS.factions.nat_npc_highland.fill },
+      { label: 'Biên Giới (NPC)', color: MAP_TOKENS.factions.nat_npc_border.fill },
+      { label: 'Lãnh thổ lân cận', color: MAP_TOKENS.context.landFill },
+    ],
   },
   {
     id: 'TERRAIN',
     label: 'Địa hình & Độ cao',
-    shortDesc: 'Địa hình tự nhiên & độ cao thực NASA SRTM 90m',
+    shortLabel: 'Địa hình',
+    shortcutKey: '2',
+    shortDesc: 'Phân loại địa hình tự nhiên & bóng đổ địa hình nội suy từ NASA SRTM 90m',
     implemented: true,
+    dataRequirements: [
+      'worldMap72.geojson',
+      'region.terrain',
+      'region.elevationMeters',
+      'layers.peaks',
+    ],
+    visibilityRules: 'Hiển thị địa hình thuần khiết, bật nổi bật bóng đổ SRTM và 6 đỉnh núi tiêu biểu',
+    authorizationRules: 'PUBLIC_WORLD_GEOGRAPHY',
+    terrainBlendOpacity: 0.94,
+    zoomBehavior: 'L1–L2 tổng quan dãy núi và đồng bằng; L3–L5 hiển thị đỉnh núi và địa thế 2.5D tùy chọn',
+    layerOrdering: [
+      'ocean',
+      'context-countries',
+      'terrain-base',
+      'srtm-hillshade',
+      'internal-borders',
+      'rivers',
+      'transport',
+      'cities',
+      'peaks',
+    ],
+    fallbackBehavior: 'SVG vector hiển thị phân tầng màu độ cao địa hình không cần WebGL',
+    updateStrategy: 'STATIC_GEO_CACHE',
+    colorScale: [
+      { label: 'Núi cao (>= 900m)', color: MAP_TOKENS.terrain.mountainHigh },
+      { label: 'Cao nguyên / Đồi (220–899m)', color: MAP_TOKENS.terrain.highlands },
+      { label: 'Rừng rậm / Hành lang', color: MAP_TOKENS.terrain.forestCorridor },
+      { label: 'Đồng bằng / Châu thổ', color: MAP_TOKENS.terrain.riverBasin },
+      { label: 'Ven biển / Đầm lầy', color: MAP_TOKENS.terrain.coastalDelta },
+      { label: 'Đô thị trọng điểm', color: MAP_TOKENS.terrain.urbanCore },
+    ],
   },
   {
     id: 'ECONOMY',
     label: 'Kinh tế',
-    shortDesc: 'Sản lượng kinh tế trừu tượng theo vùng',
+    shortLabel: 'Kinh tế',
+    shortcutKey: '3',
+    shortDesc: 'Sản lượng kinh tế trừu tượng theo 72 vùng (số nguyên cố định scale 1000)',
     implemented: true,
+    dataRequirements: ['worldMap72.geojson', 'region.economicOutputFp'],
+    visibilityRules: 'Tô phân cấp sản lượng kinh tế kèm bóng đổ địa hình nhẹ và ranh giới quốc gia',
+    authorizationRules: 'PUBLIC_WORLD_OR_FILTERED_MATCH',
+    terrainBlendOpacity: 0.78,
+    zoomBehavior: 'Hiển thị đồng nhất L1–L5, nhấn mạnh trung tâm công-nông nghiệp ở L3+',
+    layerOrdering: [
+      'ocean',
+      'context-countries',
+      'economy-fill',
+      'srtm-hillshade',
+      'internal-borders',
+      'national-borders',
+      'rivers',
+      'cities',
+    ],
+    fallbackBehavior: 'SVG vector áp dụng thang màu sản lượng kinh tế đồng bộ',
+    updateStrategy: 'INCREMENTAL_MATCH_DELTA',
+    colorScale: [
+      { label: 'Cao (>= 80)', color: MAP_TOKENS.economy.tierHigh },
+      { label: 'Khá (65–79)', color: MAP_TOKENS.economy.tierGood },
+      { label: 'Trung bình (45–64)', color: MAP_TOKENS.economy.tierMedium },
+      { label: 'Thấp (< 45)', color: MAP_TOKENS.economy.tierLow },
+    ],
   },
   {
     id: 'INFRASTRUCTURE',
     label: 'Hạ tầng',
-    shortDesc: 'Năng lực hạ tầng & mạng giao thông hư cấu 1955',
+    shortLabel: 'Hạ tầng',
+    shortcutKey: '4',
+    shortDesc: 'Năng lực hạ tầng vùng & mạng 98 hành lang giao thông 4 cấp (hư cấu 1955)',
     implemented: true,
+    dataRequirements: [
+      'worldMap72.geojson',
+      'match.regions[].infrastructureFp',
+      'layers.transportCorridors',
+    ],
+    visibilityRules: 'Ưu tiên nổi bật 98 tuyến đường sắt, quốc lộ, đường phụ và kết nối vượt sông',
+    authorizationRules: 'PUBLIC_WORLD_OR_FILTERED_MATCH',
+    terrainBlendOpacity: 0.76,
+    zoomBehavior: 'L2 hiện đường sắt & trục chính; L3–L5 mở toàn bộ đường phụ và vượt sông',
+    layerOrdering: [
+      'ocean',
+      'context-countries',
+      'infrastructure-fill',
+      'srtm-hillshade',
+      'internal-borders',
+      'rivers',
+      'transport-emphasized',
+      'cities',
+    ],
+    fallbackBehavior: 'SVG vector hiển thị phân cấp hạ tầng và 4 kiểu nét giao thông tương đương',
+    updateStrategy: 'INCREMENTAL_MATCH_DELTA',
+    colorScale: [
+      { label: 'Phát triển (>= 70)', color: MAP_TOKENS.infrastructure.tierHigh },
+      { label: 'Khá (55–69)', color: MAP_TOKENS.infrastructure.tierGood },
+      { label: 'Cơ bản (40–54)', color: MAP_TOKENS.infrastructure.tierMedium },
+      { label: 'Hạn chế (< 40)', color: MAP_TOKENS.infrastructure.tierLow },
+    ],
   },
 ];
 
 /**
- * Extensible layer slots prepared for future roadmap phases (P02-05 architecture prep).
- * Exposed strictly as non-interactive architectural metadata — zero premature combat/weather logic.
+ * Preserved P02-05 export for compatibility.
  */
 export const PLANNED_FUTURE_MAP_LAYERS: readonly PlannedLayerDescriptor[] = [
-  { id: 'MILITARY', label: 'Quân sự', targetPhase: 'Roadmap sau P03', implemented: false },
-  { id: 'WEATHER', label: 'Thời tiết', targetPhase: 'Roadmap sau P03', implemented: false },
+  { id: 'MILITARY', label: 'Quân sự', targetPhase: 'Giai đoạn 04 · Military Genesis', implemented: false },
+  { id: 'WEATHER', label: 'Thời tiết', targetPhase: 'Giai đoạn 09 · Living Nation', implemented: false },
   {
     id: 'POLITICAL_INFLUENCE',
     label: 'Ảnh hưởng chính trị',
-    targetPhase: 'Roadmap sau P03',
+    targetPhase: 'Giai đoạn 05 · Political Awakening',
+    implemented: false,
+  },
+];
+
+/**
+ * Full Map Mode Registry 2.0 roadmap catalog (Section 13).
+ * Explicitly marked unavailable (`implemented: false`) until their authoritative server engines exist.
+ */
+export const FUTURE_MAP_MODES_REGISTRY: readonly FutureMapModeSpec[] = [
+  {
+    id: 'MILITARY',
+    label: 'Quân sự',
+    targetPhase: 'P04 · Military Genesis',
+    dataRequirements: ['match.units', 'military.frontlines'],
+    authorizationRules: 'SERVER_FILTERED_FOG_OF_WAR',
+    implemented: false,
+  },
+  {
+    id: 'SUPPLY',
+    label: 'Hậu cần & Tiếp tế',
+    targetPhase: 'P04 · Military Genesis',
+    dataRequirements: ['supply.network', 'region.supplyCapacityFp'],
+    authorizationRules: 'SERVER_FILTERED_FOG_OF_WAR',
+    implemented: false,
+  },
+  {
+    id: 'CONSTRUCTION',
+    label: 'Xây dựng & Công trình',
+    targetPhase: 'P03 · Economic Foundation',
+    dataRequirements: ['match.jobs', 'construction.queue'],
+    authorizationRules: 'SERVER_FILTERED_FOG_OF_WAR',
+    implemented: false,
+  },
+  {
+    id: 'POLITICAL_INFLUENCE',
+    label: 'Ảnh hưởng chính trị',
+    targetPhase: 'P05 · Political Awakening',
+    dataRequirements: ['politics.influenceByFaction'],
+    authorizationRules: 'SERVER_FILTERED_FOG_OF_WAR',
+    implemented: false,
+  },
+  {
+    id: 'DIPLOMATIC_RELATIONS',
+    label: 'Quan hệ Ngoại giao',
+    targetPhase: 'P07 · Cold War Diplomacy',
+    dataRequirements: ['diplomacy.relations', 'match.treaties'],
+    authorizationRules: 'SERVER_AUTHORITATIVE_ENGINE',
+    implemented: false,
+  },
+  {
+    id: 'INTELLIGENCE',
+    label: 'Tình báo & Sương mù chiến tranh',
+    targetPhase: 'P08 · Shadow Politics',
+    dataRequirements: ['intel.visibilityMatrix'],
+    authorizationRules: 'SERVER_FILTERED_FOG_OF_WAR',
+    implemented: false,
+  },
+  {
+    id: 'POPULATION',
+    label: 'Dân cư & Nhân khẩu',
+    targetPhase: 'P09 · Living Nation',
+    dataRequirements: ['population.demographics'],
+    authorizationRules: 'SERVER_AUTHORITATIVE_ENGINE',
+    implemented: false,
+  },
+  {
+    id: 'WEATHER',
+    label: 'Thời tiết chiến trường',
+    targetPhase: 'P09 · Living Nation',
+    dataRequirements: ['weather.cells'],
+    authorizationRules: 'SERVER_AUTHORITATIVE_ENGINE',
     implemented: false,
   },
 ];
@@ -91,11 +317,36 @@ export const TRANSPORT_LABELS: Readonly<Record<TransportKind, string>> = {
 };
 
 export const NATION_LABELS: Readonly<Record<string, string>> = {
-  nat_north_dir: 'Liên Minh Phương Bắc (Bắc)',
-  nat_south_rep: 'Cộng Hòa Phương Nam (Nam)',
-  nat_npc_highland: 'Hội Đồng Cao Nguyên (NPC)',
-  nat_npc_border: 'Liên Minh Biên Giới (NPC)',
+  nat_north_dir: MAP_TOKENS.factions.nat_north_dir.name,
+  nat_south_rep: MAP_TOKENS.factions.nat_south_rep.name,
+  nat_npc_highland: MAP_TOKENS.factions.nat_npc_highland.name,
+  nat_npc_border: MAP_TOKENS.factions.nat_npc_border.name,
 };
+
+export function getActiveMapLayerDescriptor(layer: MapLayerMode): ActiveLayerDescriptor {
+  return ACTIVE_MAP_LAYERS.find((l) => l.id === layer) ?? ACTIVE_MAP_LAYERS[0];
+}
+
+export function computeTerrainBaseColor(feature: WorldMapFeature): string {
+  const elev = feature.properties.elevationMeters;
+  if (feature.properties.terrain === 'URBAN_CORE') return MAP_TOKENS.terrain.urbanCore;
+  if (elev >= 900) return MAP_TOKENS.terrain.mountainHigh;
+  if (elev >= 550) return MAP_TOKENS.terrain.mountainSlope;
+  if (elev >= 220) {
+    return feature.properties.terrain === 'JUNGLE_CORRIDOR'
+      ? MAP_TOKENS.terrain.forestCorridor
+      : MAP_TOKENS.terrain.highlands;
+  }
+  if (feature.properties.terrain === 'JUNGLE_CORRIDOR') return MAP_TOKENS.terrain.forestCorridor;
+  if (feature.properties.terrain === 'COASTAL_DELTA') {
+    return feature.properties.forestCoverFp >= 350
+      ? MAP_TOKENS.terrain.wetlandCoast
+      : MAP_TOKENS.terrain.coastalDelta;
+  }
+  return feature.properties.hasMajorRiver
+    ? MAP_TOKENS.terrain.riverBasin
+    : MAP_TOKENS.terrain.agriculturalPlain;
+}
 
 export function computeRegionFillColor(
   feature: WorldMapFeature,
@@ -106,81 +357,29 @@ export function computeRegionFillColor(
   const controller = liveRegion?.controllerNationId ?? feature.properties.initialControllerNationId;
   const infraVal = (liveRegion?.infrastructureFp ?? feature.properties.infrastructureFp) / 1000;
   const econVal = feature.properties.economicOutputFp / 1000;
-  const elev = feature.properties.elevationMeters;
 
   if (layer === 'POLITICAL') {
-    switch (controller) {
-      case 'nat_north_dir':
-        return '#A64B3C';
-      case 'nat_south_rep':
-        return '#335D7E';
-      case 'nat_npc_highland':
-        return '#A88A4E';
-      case 'nat_npc_border':
-        return '#6C7D63';
-      default:
-        return '#8D99AE';
-    }
+    return getFactionVisual(controller).fill;
   }
 
   if (layer === 'TERRAIN') {
-    if (feature.properties.terrain === 'URBAN_CORE') return '#666B75';
-    if (elev >= 900) return '#7E644E';
-    if (elev >= 550) return '#9A8261';
-    if (elev >= 220) {
-      return feature.properties.terrain === 'JUNGLE_CORRIDOR' ? '#6D8860' : '#B5A178';
-    }
-    if (feature.properties.terrain === 'JUNGLE_CORRIDOR') return '#769168';
-    if (feature.properties.terrain === 'COASTAL_DELTA') return '#B3C69E';
-    return '#C6D4A7';
+    return computeTerrainBaseColor(feature);
   }
 
   if (layer === 'ECONOMY') {
-    if (econVal >= 80) return '#22543D';
-    if (econVal >= 65) return '#4C8B6C';
-    if (econVal >= 45) return '#93BDA5';
-    return '#D5E4DA';
+    if (econVal >= 80) return MAP_TOKENS.economy.tierHigh;
+    if (econVal >= 65) return MAP_TOKENS.economy.tierGood;
+    if (econVal >= 45) return MAP_TOKENS.economy.tierMedium;
+    return MAP_TOKENS.economy.tierLow;
   }
 
   // INFRASTRUCTURE
-  if (infraVal >= 70) return '#58442E';
-  if (infraVal >= 55) return '#8F7756';
-  if (infraVal >= 40) return '#C3B398';
-  return '#E4DDD0';
+  if (infraVal >= 70) return MAP_TOKENS.infrastructure.tierHigh;
+  if (infraVal >= 55) return MAP_TOKENS.infrastructure.tierGood;
+  if (infraVal >= 40) return MAP_TOKENS.infrastructure.tierMedium;
+  return MAP_TOKENS.infrastructure.tierLow;
 }
 
-export function buildLegendItems(layer: MapLayerMode): readonly { label: string; color: string }[] {
-  if (layer === 'POLITICAL') {
-    return [
-      { label: 'Phương Bắc (Human)', color: '#A64B3C' },
-      { label: 'Phương Nam (Human)', color: '#335D7E' },
-      { label: 'Cao Nguyên (NPC)', color: '#A88A4E' },
-      { label: 'Biên Giới (NPC)', color: '#6C7D63' },
-      { label: 'Lãnh thổ lân cận', color: '#DCD7CA' },
-    ];
-  }
-  if (layer === 'TERRAIN') {
-    return [
-      { label: 'Núi cao (>=900m)', color: '#7E644E' },
-      { label: 'Đồi núi (220–899m)', color: '#B5A178' },
-      { label: 'Rừng rậm', color: '#6D8860' },
-      { label: 'Đồng bằng / Sông', color: '#C6D4A7' },
-      { label: 'Ven biển', color: '#B3C69E' },
-      { label: 'Đô thị', color: '#666B75' },
-    ];
-  }
-  if (layer === 'ECONOMY') {
-    return [
-      { label: 'Cao (>= 80)', color: '#22543D' },
-      { label: 'Khá (65–79)', color: '#4C8B6C' },
-      { label: 'Trung bình (45–64)', color: '#93BDA5' },
-      { label: 'Thấp (< 45)', color: '#D5E4DA' },
-    ];
-  }
-  return [
-    { label: 'Phát triển (>= 70)', color: '#58442E' },
-    { label: 'Khá (55–69)', color: '#8F7756' },
-    { label: 'Cơ bản (40–54)', color: '#C3B398' },
-    { label: 'Hạn chế (< 40)', color: '#E4DDD0' },
-  ];
+export function buildLegendItems(layer: MapLayerMode): readonly LegendItem[] {
+  return getActiveMapLayerDescriptor(layer).colorScale;
 }

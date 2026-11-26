@@ -12,11 +12,14 @@
 | **P02-03** | Bản đồ nền | P02-02 | COMPLETED (Chờ duyệt) | MapLibre GL + tự động dự phòng vector SVG kéo-thả/phóng-thu, 72 vùng GeoJSON RFC 7946 liên thông (0 vùng mồ côi), địa hình & độ cao tham chiếu Natural Earth/SRTM, mạng di chuyển hư cấu (`modernRoadsUsedAsHistorical: false`) |
 | **P02-04** | Đồng bộ và lớp bản đồ | P02-03 | COMPLETED (Chờ duyệt) | Snapshot lọc quyền (`projectMatchForViewer` ẩn `serverPrivate` + fog-of-war đơn vị đối thủ), delta theo `sequence`, phát hiện gap & `room:resync` + `/api/rooms/:matchId/sync`, reconnect exponential backoff, 4 lớp bản đồ (`POLITICAL`, `TERRAIN`, `ECONOMY`, `INFRASTRUCTURE`), panel thông tin vùng desktop/mobile |
 | **P02-05** | Nền tảng bản đồ địa lý chân thực | P02-04 | COMPLETED (Chờ duyệt) | Natural Earth 1:10m + NASA SRTM 90m DEM (Public Domain); 72 đa giác hữu cơ cắt theo bờ biển Việt Nam thực tế bảo toàn nguyên `reg_vn_01`..`reg_vn_72`; bối cảnh Lào/Campuchia/Nam Trung Quốc/Thái Lan/Biển Đông; 66 đoạn sông, 24 thành phố, 6 đỉnh núi, 98 hành lang giao thông 4 cấp (`movementCostFp`/`movementModifierFp` sẵn sàng Movement Engine); MapLibre GL chiếm diện tích chủ đạo + dự phòng SVG đầy đủ địa lý; tách biệt địa lý thực & gameplay hư cấu 1955 |
+| **P02-06** | Operation Living Map — Strategic Map Engine 2.0 | P02-05 | COMPLETED (Chờ duyệt) | Không gian chiến lược toàn màn hình thích ứng Desktop/Tablet/Mobile (`h-dvh`, không cuộn dọc, hỗ trợ iPhone safe-area, tách riêng Developer/Diagnostics workspace cho P01); 6 module engine thuần `src/web/map/` (design tokens, Semantic Zoom L1–L5 + 7 preset + bảo toàn camera, 4 mức đồ họa `LOW`/`MEDIUM`/`HIGH`/`ULTRA`, danh mục 24 đô thị + tránh va chạm nhãn + tìm kiếm tiếng Việt, bóng đổ 2D SRTM 90m cắt mặt nạ bờ biển Việt Nam + biên giới quốc gia động từ server state, nền tảng hiển thị quân sự tương lai tôn trọng fog-of-war không tạo đơn vị giả); Map Mode Registry 2.0 (4 chế độ hoạt động + 8 chế độ lộ trình khóa); Inspector accordion desktop + Bottom Sheet 3 trạng thái di động; Minimap SVG tương tác; SVG fallback tương tác đầy đủ; 34/34 bài kiểm thử đạt (27 hồi quy + 7 mới) & kiểm chứng Playwright 7 viewport / 15 ảnh chụp thực tế |
 
 
 ## Ghi chú môi trường & kiểm chứng
 
-- Môi trường không có kho `.git` được khởi tạo sẵn; chủ dự án tự lưu checkpoint / xuất GitHub bằng giao diện Google AI Studio sau khi duyệt.
+- Môi trường không có kho `.git` được khởi tạo sẵn; chủ dự án tự lưu checkpoint / xuất GitHub bằng giao diện Google AI Studio sau khi duyệt (mốc đề xuất: `P02-06-LIVING-MAP`).
 - Không sử dụng Gemini API hay bất kỳ API AI trả phí nào trong mã nguồn thực thi gameplay.
-- Dữ liệu preview được tách riêng trong `./data/vdn-preview.sqlite` (`APP_ENV=preview`); migration `002_phase02_multiplayer_clock` bổ sung tiến tới và bảo toàn 100% dữ liệu P01 (`mch_preview_alt_1955`). Chế độ `production` khóa cứng endpoint fixture và bắt buộc cấu hình `SQLITE_DB_PATH`.
+- Dữ liệu preview được tách riêng trong `./data/vdn-preview.sqlite` (`APP_ENV=preview`); migrations `001` và `002` được giữ nguyên hoàn toàn không reset. Chế độ `production` khóa cứng endpoint fixture và bắt buộc cấu hình `SQLITE_DB_PATH`.
+- Kiểm thử trình duyệt di động (`390×844`, `375×667`, `844×390`) được thực hiện bằng Chromium mobile viewport emulation (Playwright); môi trường Linux container không có trình duyệt Safari/WebKit hay thiết bị iPhone vật lý.
+
 

@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
   Clock,
@@ -13,10 +13,12 @@ import {
   UserPlus,
   Users,
   Wifi,
+  X,
 } from 'lucide-react';
 import {
   ActorIdSchema,
   asUtcEpochMs,
+  ClientMatchView,
   Command,
   CommandIdSchema,
   CONTRACT_SCHEMA_VERSION,
@@ -31,6 +33,10 @@ import {
   PublicUser,
   wholeUnitsToFixedPoint,
 } from '../contracts';
+import { HealthPayload, WsLiveState } from './api';
+import { LeftNavRail, WorkspaceDrawerId } from './components/LeftNavRail';
+import { TopCommandBar } from './components/TopCommandBar';
+import { MatchSimulationPanel } from './MatchSimulationPanel';
 import {
   BackupAuditSummary,
   createRoom,
@@ -56,13 +62,57 @@ import {
 } from './roomApi';
 import { StrategicMap } from './StrategicMap';
 import { DeltaSyncState } from './syncClient';
+import { SystemStatusPanel } from './SystemStatusPanel';
+
+interface MultiplayerWorkspaceProps {
+  readonly health: HealthPayload | null;
+  readonly healthLoading: boolean;
+  readonly healthError: string | null;
+  readonly foundationWs: WsLiveState;
+  readonly foundationMatch: ClientMatchView | null;
+  readonly foundationMatchLoading: boolean;
+  readonly onRefreshFoundation: () => void;
+  readonly onFoundationMatchLoaded: (m: ClientMatchView) => void;
+}
 
 function formatUtc(ts: number): string {
   return new Date(ts).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
 }
 
-export function MultiplayerWorkspace() {
-  // World Map GeoJSON & Geographic Context Layers (P02-03 & P02-05)
+function isCompactMobileViewport(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.innerWidth < 768 || (window.innerHeight < 500 && window.innerWidth < 1024);
+}
+
+function useResponsiveMobileFlag(): boolean {
+  const [isMobile, setIsMobile] = useState<boolean>(isCompactMobileViewport);
+
+  useEffect(() => {
+    const update = () => setIsMobile(isCompactMobileViewport());
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  return isMobile;
+}
+
+export function MultiplayerWorkspace({
+  health,
+  healthLoading,
+  healthError,
+  foundationWs,
+  foundationMatch,
+  foundationMatchLoading,
+  onRefreshFoundation,
+  onFoundationMatchLoaded,
+}: MultiplayerWorkspaceProps) {
+  const isMobile = useResponsiveMobileFlag();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  const [activeDrawer, setActiveDrawer] = useState<WorkspaceDrawerId>('none');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // World Map GeoJSON & Geographic Context Layers (P02-03, P02-05, P02-06)
   const [geojson, setGeojson] = useState<WorldMapGeoJson | null>(null);
   const [worldLayers, setWorldLayers] = useState<WorldMapLayers | null>(null);
   const [mapLoading, setMapLoading] = useState(true);
@@ -97,6 +147,24 @@ export function MultiplayerWorkspace() {
   const [replayReport, setReplayReport] = useState<RoomReplayReport | null>(null);
   const [backupSummary, setBackupSummary] = useState<BackupAuditSummary | null>(null);
 
+  // Sync fullscreen document state
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  const handleToggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      void rootRef.current?.requestFullscreen?.().catch(() => {});
+    } else {
+      void document.exitFullscreen?.().catch(() => {});
+    }
+  }, []);
+
+  // Load static world geography once (NEVER refetched on server ticks!)
   useEffect(() => {
     let active = true;
     setMapLoading(true);
@@ -130,26 +198,23 @@ export function MultiplayerWorkspace() {
     }
   }, []);
 
-  const openRoom = useCallback(
-    async (sessionToken: string, matchId: string) => {
-      setRoomBusy(true);
-      setRoomError(null);
-      setReplayReport(null);
-      setBackupSummary(null);
-      setConfirmSurrender(false);
-      try {
-        const detail = await fetchRoomDetail(sessionToken, matchId);
-        setActiveRoom(detail.room);
-        setActiveMatch(detail.match);
-        setSnapshots(detail.snapshots ?? []);
-      } catch (err) {
-        setRoomError(err instanceof Error ? err.message : 'Không thể mở phòng đấu.');
-      } finally {
-        setRoomBusy(false);
-      }
-    },
-    []
-  );
+  const openRoom = useCallback(async (sessionToken: string, matchId: string) => {
+    setRoomBusy(true);
+    setRoomError(null);
+    setReplayReport(null);
+    setBackupSummary(null);
+    setConfirmSurrender(false);
+    try {
+      const detail = await fetchRoomDetail(sessionToken, matchId);
+      setActiveRoom(detail.room);
+      setActiveMatch(detail.match);
+      setSnapshots(detail.snapshots ?? []);
+    } catch (err) {
+      setRoomError(err instanceof Error ? err.message : 'Không thể mở phòng đấu.');
+    } finally {
+      setRoomBusy(false);
+    }
+  }, []);
 
   // Live Authenticated WebSocket Sync (P02-04)
   const handleWsSnapshot = useCallback(
@@ -160,19 +225,16 @@ export function MultiplayerWorkspace() {
     []
   );
 
-  const handleWsRoomStatus = useCallback(
-    (room: MatchRoomSummary) => {
-      setActiveRoom(room);
-      setMyRooms((prev) => {
-        const idx = prev.findIndex((r) => r.matchId === room.matchId);
-        if (idx === -1) return [room, ...prev];
-        const next = [...prev];
-        next[idx] = room;
-        return next;
-      });
-    },
-    []
-  );
+  const handleWsRoomStatus = useCallback((room: MatchRoomSummary) => {
+    setActiveRoom(room);
+    setMyRooms((prev) => {
+      const idx = prev.findIndex((r) => r.matchId === room.matchId);
+      if (idx === -1) return [room, ...prev];
+      const next = [...prev];
+      next[idx] = room;
+      return next;
+    });
+  }, []);
 
   const handleWsDeltaSynced = useCallback(
     (matchId: string, _deltaState: DeltaSyncState) => {
@@ -383,7 +445,13 @@ export function MultiplayerWorkspace() {
   };
 
   const handleScheduleRegionAction = async (regionId: string) => {
-    if (!token || !activeRoom || !activeMatch || !activeRoom.viewerActorId || !activeRoom.viewerNationId) {
+    if (
+      !token ||
+      !activeRoom ||
+      !activeMatch ||
+      !activeRoom.viewerActorId ||
+      !activeRoom.viewerNationId
+    ) {
       return;
     }
     setCommandBusy(true);
@@ -398,7 +466,9 @@ export function MultiplayerWorkspace() {
         commandId: CommandIdSchema.parse(`cmd_job_${nextSeq}_${nonce}`),
         matchId: MatchIdSchema.parse(activeRoom.matchId),
         actorId: ActorIdSchema.parse(activeRoom.viewerActorId),
-        idempotencyKey: IdempotencyKeySchema.parse(`idem_job_${activeRoom.matchId}_${nextSeq}_${nonce}`),
+        idempotencyKey: IdempotencyKeySchema.parse(
+          `idem_job_${activeRoom.matchId}_${nextSeq}_${nonce}`
+        ),
         sequence: nextSeq,
         expectedVersion: activeMatch.version,
         issuedAtUtc: asUtcEpochMs(Date.now()),
@@ -416,7 +486,7 @@ export function MultiplayerWorkspace() {
       const res = await submitRoomCommand(token, activeRoom.matchId, command);
       setActiveMatch(res.match);
       setRoomNotice(
-        `Đã đặt lịch dự án hạ tầng cho khu vực ${regionId} (v${res.version}, trừ 10.000 công nghiệp, hoàn tất theo đồng hồ UTC server sau 15 phút).`
+        `Đã đặt lịch hạ tầng vùng ${regionId} (v${res.version}, trừ 10 CN, hoàn tất theo UTC server sau 15 phút).`
       );
     } catch (err) {
       setRoomError(err instanceof Error ? err.message : 'Lệnh bị máy chủ từ chối.');
@@ -435,685 +505,677 @@ export function MultiplayerWorkspace() {
     }
   };
 
-  const bothFilled = Boolean(
-    activeRoom?.slots.NORTH.userId && activeRoom?.slots.SOUTH.userId
-  );
-  const bothReady = Boolean(
-    activeRoom?.slots.NORTH.ready && activeRoom?.slots.SOUTH.ready
-  );
+  const bothFilled = Boolean(activeRoom?.slots.NORTH.userId && activeRoom?.slots.SOUTH.userId);
+  const bothReady = Boolean(activeRoom?.slots.NORTH.ready && activeRoom?.slots.SOUTH.ready);
   const canStart = Boolean(activeRoom?.status === 'LOBBY' && bothFilled && bothReady);
   const viewerSlot = activeRoom?.viewerSlot ?? null;
   const viewerReady = viewerSlot && activeRoom ? activeRoom.slots[viewerSlot].ready : false;
 
   return (
-    <div className="space-y-6">
-      {/* Section 1: Dominant Strategic Geographic 72-Region Map (P02-03, P02-04 & P02-05) */}
-      <StrategicMap
-        geojson={geojson}
-        layers={worldLayers}
-        loading={mapLoading}
-        error={mapError}
-        match={activeMatch}
-        room={activeRoom}
-        onScheduleRegionAction={
-          activeRoom ? (regionId) => void handleScheduleRegionAction(regionId) : undefined
+    <div
+      ref={rootRef}
+      data-testid="game-workspace-root"
+      className="flex h-dvh w-screen flex-col overflow-hidden bg-[#11151A] text-[#EFE9DC]"
+    >
+      {/* Top Compact Resource & Command Bar */}
+      <TopCommandBar
+        health={health}
+        user={user}
+        activeRoom={activeRoom}
+        activeMatch={activeMatch}
+        syncTelemetry={syncTelemetry}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={handleToggleFullscreen}
+        onOpenRoomsDrawer={() =>
+          setActiveDrawer((prev) => (prev === 'rooms' ? 'none' : 'rooms'))
         }
-        actionBusy={commandBusy}
       />
 
-      {/* Section 2: Identity & Two-Slot Multiplayer Room Manager (P02-01) */}
-      <section
-        aria-label="Danh tính & Phòng đấu 2 người chơi"
-        className="border border-[#D9D6CC] bg-[#FFFFFF]"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E6E3DA] px-5 py-4">
-          <div>
-            <p className="text-xs font-medium text-[#2B4C3F]">
-              P02-01 · Danh tính &amp; Phòng đấu Độc lập (Đúng 2 Slot Bắc / Nam · NPC Độc lập)
-            </p>
-            <h2 className="mt-0.5 text-lg font-semibold text-[#171B20]">
-              Phòng Đấu Multiplayer Authoritative
-            </h2>
-          </div>
+      {/* Main Fullscreen Command Stage */}
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        {/* Desktop Left Navigation Rail */}
+        {!isMobile && (
+          <LeftNavRail
+            activeDrawer={activeDrawer}
+            onSelectDrawer={setActiveDrawer}
+            hasActiveRoom={Boolean(activeRoom)}
+            isMobile={false}
+          />
+        )}
 
-          {user && (
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="text-right text-xs">
-                <p className="font-semibold text-[#171B20]">{user.displayName}</p>
-                <p className="font-mono text-[#545B66]">
-                  @{user.username} · Token trong RAM
-                </p>
-              </div>
+        {/* Dominant Fullscreen Strategic Map Engine 2.0 */}
+        <main className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          <StrategicMap
+            geojson={geojson}
+            layers={worldLayers}
+            loading={mapLoading}
+            error={mapError}
+            match={activeMatch}
+            foundationMatch={foundationMatch}
+            room={activeRoom}
+            isMobile={isMobile}
+            activeDrawer={activeDrawer}
+            onChangeDrawer={setActiveDrawer}
+            onToggleFullscreen={handleToggleFullscreen}
+            onScheduleRegionAction={
+              activeRoom ? (regionId) => void handleScheduleRegionAction(regionId) : undefined
+            }
+            actionBusy={commandBusy}
+          />
+
+          {/* Floating Notification Toast Area */}
+          {(roomNotice || roomError) && (
+            <div
+              data-testid="floating-notifications"
+              className="pointer-events-auto absolute top-3 left-1/2 z-40 flex max-w-[92vw] -translate-x-1/2 items-center gap-2 border px-3 py-2 text-xs shadow-2xl sm:max-w-lg"
+              style={{
+                backgroundColor: roomError ? '#2A1614' : '#16261E',
+                borderColor: roomError ? '#B84B3E' : '#4F8A64',
+                color: '#EFE9DC',
+              }}
+            >
+              <span className="leading-snug">{roomError ?? roomNotice}</span>
               <button
                 type="button"
-                data-testid="logout-btn"
-                onClick={() => void handleLogout()}
-                className="inline-flex items-center gap-1.5 border border-[#D9D6CC] bg-[#F6F5F0] px-3 py-1.5 text-xs font-medium text-[#171B20] hover:bg-[#EBE8DF]"
+                aria-label="Đóng thông báo"
+                onClick={() => {
+                  setRoomError(null);
+                  setRoomNotice(null);
+                }}
+                className="shrink-0 text-[#A8B2BC] hover:text-[#EFE9DC]"
               >
-                <LogOut className="h-3.5 w-3.5" />
-                <span>Đăng xuất</span>
+                <X className="h-3.5 w-3.5" />
               </button>
             </div>
           )}
-        </div>
 
-        <div className="p-5">
-          {!user ? (
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1fr]">
-              {/* Auth Form */}
-              <form onSubmit={(e) => void handleAuthSubmit(e)} className="space-y-3">
-                <div className="flex items-center gap-2 border-b border-[#E6E3DA] pb-2.5">
-                  <button
-                    type="button"
-                    data-testid="auth-tab-register"
-                    onClick={() => {
-                      setAuthMode('register');
-                      setAuthError(null);
-                    }}
-                    className={`border px-3 py-1 text-xs font-semibold ${
-                      authMode === 'register'
-                        ? 'border-[#171B20] bg-[#171B20] text-[#FFFFFF]'
-                        : 'border-[#D9D6CC] bg-[#F6F5F0] text-[#171B20]'
-                    }`}
-                  >
-                    Tạo tài khoản mới
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="auth-tab-login"
-                    onClick={() => {
-                      setAuthMode('login');
-                      setAuthError(null);
-                    }}
-                    className={`border px-3 py-1 text-xs font-semibold ${
-                      authMode === 'login'
-                        ? 'border-[#171B20] bg-[#171B20] text-[#FFFFFF]'
-                        : 'border-[#D9D6CC] bg-[#F6F5F0] text-[#171B20]'
-                    }`}
-                  >
-                    Đăng nhập
-                  </button>
-                </div>
-
+          {/* Contextual Multiplayer Rooms Drawer (P02-01..P02-04 preserved 100%) */}
+          {activeDrawer === 'rooms' && (
+            <aside
+              aria-label="Phòng đấu 2 người chơi"
+              data-testid="rooms-drawer"
+              className="pointer-events-auto absolute top-3 bottom-3 left-3 z-30 flex w-[460px] max-w-[calc(100%-24px)] flex-col border border-[#3C4957] bg-[#161C22]/98 text-[#EFE9DC] shadow-2xl"
+            >
+              <div className="flex shrink-0 items-center justify-between border-b border-[#252E38] bg-[#12171D] px-4 py-3">
                 <div>
-                  <label htmlFor="vdn-username" className="block text-xs font-medium text-[#171B20]">
-                    Tên đăng nhập (3–32 ký tự)
-                  </label>
-                  <input
-                    id="vdn-username"
-                    data-testid="auth-username"
-                    type="text"
-                    required
-                    minLength={3}
-                    maxLength={32}
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="vd: chi_huy_bac"
-                    className="mt-1 w-full border border-[#D9D6CC] bg-[#FAFAF7] px-3 py-2 text-sm text-[#171B20] focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
-
-                {authMode === 'register' && (
-                  <div>
-                    <label
-                      htmlFor="vdn-displayname"
-                      className="block text-xs font-medium text-[#171B20]"
-                    >
-                      Tên hiển thị trong phòng đấu
-                    </label>
-                    <input
-                      id="vdn-displayname"
-                      data-testid="auth-displayname"
-                      type="text"
-                      required
-                      minLength={2}
-                      maxLength={48}
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="vd: Chỉ huy Phương Bắc"
-                      className="mt-1 w-full border border-[#D9D6CC] bg-[#FAFAF7] px-3 py-2 text-sm text-[#171B20] focus:border-[#2B4C3F] focus:outline-none"
-                    />
-                  </div>
-                )}
-
-                <div>
-                  <label htmlFor="vdn-password" className="block text-xs font-medium text-[#171B20]">
-                    Mật khẩu (tối thiểu 8 ký tự · băm scrypt trên server)
-                  </label>
-                  <input
-                    id="vdn-password"
-                    data-testid="auth-password"
-                    type="password"
-                    required
-                    minLength={8}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="mt-1 w-full border border-[#D9D6CC] bg-[#FAFAF7] px-3 py-2 text-sm text-[#171B20] focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
-
-                {authError && (
-                  <p className="border border-[#E5B8AF] bg-[#FDF2F0] px-3 py-2 text-xs text-[#9A3B26]">
-                    {authError}
+                  <p className="text-[10px] font-semibold tracking-wide text-[#C6A15B]">
+                    MULTIPLAYER AUTHORITATIVE · ĐÚNG 2 SLOT BẮC / NAM
                   </p>
-                )}
-
-                <button
-                  type="submit"
-                  data-testid="auth-submit-btn"
-                  disabled={authBusy}
-                  className="inline-flex items-center gap-2 border border-[#2B4C3F] bg-[#2B4C3F] px-4 py-2 text-xs font-semibold text-[#FFFFFF] hover:bg-[#223D33] disabled:opacity-60"
-                >
-                  {authMode === 'register' ? (
-                    <UserPlus className="h-3.5 w-3.5" />
-                  ) : (
-                    <KeyRound className="h-3.5 w-3.5" />
+                  <h2 className="text-sm font-bold text-[#EFE9DC]">
+                    Phòng Đấu &amp; Danh Tính Người Chơi
+                  </h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  {user && (
+                    <button
+                      type="button"
+                      data-testid="logout-btn"
+                      onClick={() => void handleLogout()}
+                      className="inline-flex h-7 items-center gap-1 border border-[#3C4957] bg-[#1B222A] px-2 text-[11px] font-medium text-[#EFE9DC] hover:border-[#C6A15B]"
+                    >
+                      <LogOut className="h-3 w-3" />
+                      <span>Thoát</span>
+                    </button>
                   )}
-                  <span>
-                    {authBusy
-                      ? 'Đang xác thực...'
-                      : authMode === 'register'
-                        ? 'Đăng ký & Vào sảnh'
-                        : 'Đăng nhập'}
-                  </span>
-                </button>
-              </form>
-
-              {/* Invariant Guidance Box */}
-              <div className="border border-[#E6E3DA] bg-[#FAFAF7] p-4 text-xs leading-relaxed text-[#545B66]">
-                <p className="font-semibold text-[#171B20]">
-                  Nguyên tắc phiên &amp; phân quyền Giai đoạn 02
-                </p>
-                <ul className="mt-2 list-disc space-y-1.5 pl-4">
-                  <li>
-                    Mỗi phòng đấu chỉ có đúng <strong>2 slot người chơi thật</strong> (Phương Bắc &amp;
-                    Phương Nam). Người chơi thứ 3 luôn bị server từ chối.
-                  </li>
-                  <li>
-                    Các chính quyền NPC (Cao Nguyên, Biên Giới) vận hành độc lập, không bao giờ chiếm
-                    slot người chơi.
-                  </li>
-                  <li>
-                    Token phiên chỉ lưu trong bộ nhớ phiên làm việc (không lưu vào{' '}
-                    <code>localStorage</code>), và mọi lệnh đều bị kiểm tra <code>matchId</code> +{' '}
-                    <code>nationId</code> trên server.
-                  </li>
-                  <li>
-                    Bạn có thể khám phá đầy đủ <strong>Bản đồ địa lý 72 vùng &amp; 4 lớp</strong>{' '}
-                    ngay phía trên trước khi đăng nhập hoặc mở phòng đấu.
-                  </li>
-                </ul>
+                  <button
+                    type="button"
+                    aria-label="Đóng bảng phòng đấu"
+                    onClick={() => setActiveDrawer('none')}
+                    className="flex h-7 w-7 items-center justify-center border border-[#2B3540] text-[#9CA7B4] hover:text-[#EFE9DC]"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="space-y-5">
-              {/* Create + Join + My Rooms Strip */}
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                {/* Create Room */}
-                <form
-                  onSubmit={(e) => void handleCreateRoom(e)}
-                  className="space-y-2.5 border border-[#E6E3DA] bg-[#FAFAF7] p-4"
-                >
-                  <p className="flex items-center gap-1.5 text-xs font-semibold text-[#171B20]">
-                    <PlusCircle className="h-3.5 w-3.5 text-[#2B4C3F]" />
-                    <span>Tạo phòng đấu mới</span>
-                  </p>
-                  <input
-                    type="text"
-                    data-testid="create-room-title"
-                    value={newRoomTitle}
-                    onChange={(e) => setNewRoomTitle(e.target.value)}
-                    minLength={3}
-                    maxLength={96}
-                    required
-                    className="w-full border border-[#D9D6CC] bg-[#FFFFFF] px-2.5 py-1.5 text-xs text-[#171B20]"
-                    placeholder="Tên chiến dịch"
-                  />
-                  <div className="flex items-center gap-2 text-xs">
-                    <label className="text-[#545B66]">Chọn phe:</label>
-                    <select
-                      data-testid="create-room-slot"
-                      value={preferredSlot}
-                      onChange={(e) => setPreferredSlot(e.target.value as HumanSlot)}
-                      className="flex-1 border border-[#D9D6CC] bg-[#FFFFFF] px-2 py-1 text-xs text-[#171B20]"
+
+              <div className="flex-1 space-y-4 overflow-y-auto p-4 text-xs">
+                {!user ? (
+                  <form onSubmit={(e) => void handleAuthSubmit(e)} className="space-y-3">
+                    <div className="grid grid-cols-2 gap-1.5 border-b border-[#252E38] pb-3">
+                      <button
+                        type="button"
+                        data-testid="auth-tab-register"
+                        onClick={() => {
+                          setAuthMode('register');
+                          setAuthError(null);
+                        }}
+                        className={`border py-1.5 text-xs font-semibold ${
+                          authMode === 'register'
+                            ? 'border-[#C6A15B] bg-[#242D36] text-[#F4DC9F]'
+                            : 'border-[#2B3540] bg-[#12171D] text-[#9CA7B4]'
+                        }`}
+                      >
+                        Tạo tài khoản mới
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="auth-tab-login"
+                        onClick={() => {
+                          setAuthMode('login');
+                          setAuthError(null);
+                        }}
+                        className={`border py-1.5 text-xs font-semibold ${
+                          authMode === 'login'
+                            ? 'border-[#C6A15B] bg-[#242D36] text-[#F4DC9F]'
+                            : 'border-[#2B3540] bg-[#12171D] text-[#9CA7B4]'
+                        }`}
+                      >
+                        Đăng nhập
+                      </button>
+                    </div>
+
+                    <div>
+                      <label htmlFor="vdn-username" className="block text-[11px] text-[#A8B2BC]">
+                        Tên đăng nhập (3–32 ký tự)
+                      </label>
+                      <input
+                        id="vdn-username"
+                        data-testid="auth-username"
+                        type="text"
+                        required
+                        minLength={3}
+                        maxLength={32}
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        placeholder="vd: chi_huy_bac"
+                        className="mt-1 w-full border border-[#3C4957] bg-[#11161C] px-3 py-2 text-xs text-[#EFE9DC] focus:border-[#C6A15B] focus:outline-none"
+                      />
+                    </div>
+
+                    {authMode === 'register' && (
+                      <div>
+                        <label
+                          htmlFor="vdn-displayname"
+                          className="block text-[11px] text-[#A8B2BC]"
+                        >
+                          Tên hiển thị trong phòng đấu
+                        </label>
+                        <input
+                          id="vdn-displayname"
+                          data-testid="auth-displayname"
+                          type="text"
+                          required
+                          minLength={2}
+                          maxLength={48}
+                          value={displayName}
+                          onChange={(e) => setDisplayName(e.target.value)}
+                          placeholder="vd: Chỉ huy Phương Bắc"
+                          className="mt-1 w-full border border-[#3C4957] bg-[#11161C] px-3 py-2 text-xs text-[#EFE9DC] focus:border-[#C6A15B] focus:outline-none"
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <label htmlFor="vdn-password" className="block text-[11px] text-[#A8B2BC]">
+                        Mật khẩu (tối thiểu 8 ký tự · băm scrypt trên server)
+                      </label>
+                      <input
+                        id="vdn-password"
+                        data-testid="auth-password"
+                        type="password"
+                        required
+                        minLength={8}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="mt-1 w-full border border-[#3C4957] bg-[#11161C] px-3 py-2 text-xs text-[#EFE9DC] focus:border-[#C6A15B] focus:outline-none"
+                      />
+                    </div>
+
+                    {authError && (
+                      <p className="border border-[#B84B3E] bg-[#2A1614] px-3 py-2 text-xs text-[#F2B8B0]">
+                        {authError}
+                      </p>
+                    )}
+
+                    <button
+                      type="submit"
+                      data-testid="auth-submit-btn"
+                      disabled={authBusy}
+                      className="inline-flex w-full items-center justify-center gap-2 border border-[#C6A15B] bg-[#24322A] px-4 py-2 text-xs font-semibold text-[#EFE9DC] hover:bg-[#2F4337] disabled:opacity-50"
                     >
-                      <option value="NORTH">Phương Bắc (NORTH)</option>
-                      <option value="SOUTH">Phương Nam (SOUTH)</option>
-                    </select>
-                  </div>
-                  <button
-                    type="submit"
-                    data-testid="create-room-btn"
-                    disabled={roomBusy}
-                    className="w-full border border-[#2B4C3F] bg-[#2B4C3F] px-3 py-1.5 text-xs font-semibold text-[#FFFFFF] hover:bg-[#223D33] disabled:opacity-60"
-                  >
-                    Tạo phòng &amp; Sinh mã mời
-                  </button>
-                </form>
+                      {authMode === 'register' ? (
+                        <UserPlus className="h-3.5 w-3.5" />
+                      ) : (
+                        <KeyRound className="h-3.5 w-3.5" />
+                      )}
+                      <span>
+                        {authBusy
+                          ? 'Đang xác thực...'
+                          : authMode === 'register'
+                            ? 'Đăng ký & Vào sảnh'
+                            : 'Đăng nhập'}
+                      </span>
+                    </button>
 
-                {/* Join by Invite Code */}
-                <form
-                  onSubmit={(e) => void handleJoinRoom(e)}
-                  className="space-y-2.5 border border-[#E6E3DA] bg-[#FAFAF7] p-4"
-                >
-                  <p className="flex items-center gap-1.5 text-xs font-semibold text-[#171B20]">
-                    <Users className="h-3.5 w-3.5 text-[#2B4C3F]" />
-                    <span>Tham gia / Reconnect bằng mã mời</span>
-                  </p>
-                  <input
-                    type="text"
-                    data-testid="join-invite-code"
-                    value={inviteCodeInput}
-                    onChange={(e) => setInviteCodeInput(e.target.value.toUpperCase())}
-                    required
-                    placeholder="VDN-XXXX-XXXX"
-                    className="w-full border border-[#D9D6CC] bg-[#FFFFFF] px-2.5 py-1.5 font-mono text-xs text-[#171B20]"
-                  />
-                  <p className="text-[11px] text-[#6E7681]">
-                    Nếu bạn đã là thành viên phòng, nhập lại mã sẽ giữ nguyên slot ban đầu kể cả sau khi trận đã bắt đầu.
-                  </p>
-                  <button
-                    type="submit"
-                    data-testid="join-room-btn"
-                    disabled={roomBusy}
-                    className="w-full border border-[#171B20] bg-[#171B20] px-3 py-1.5 text-xs font-semibold text-[#FFFFFF] hover:bg-[#2E343D] disabled:opacity-60"
-                  >
-                    Vào phòng bằng mã mời
-                  </button>
-                </form>
+                    <div className="border border-[#252E38] bg-[#12171D] p-3 text-[11px] leading-relaxed text-[#9CA7B4]">
+                      <p className="font-semibold text-[#EFE9DC]">Nguyên tắc bảo mật &amp; 2 slot</p>
+                      <p className="mt-1">
+                        Mỗi phòng đấu chỉ gồm đúng 2 người chơi thật (Bắc/Nam); NPC vận hành độc lập.
+                        Token phiên chỉ lưu trong RAM trình duyệt (không dùng localStorage).
+                      </p>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="space-y-4">
+                    {/* User Identity Strip */}
+                    <div className="flex items-center justify-between border border-[#252E38] bg-[#12171D] px-3 py-2">
+                      <div>
+                        <p className="font-semibold text-[#EFE9DC]">{user.displayName}</p>
+                        <p className="font-mono text-[10px] text-[#758290]">
+                          @{user.username} · RAM Bearer Token
+                        </p>
+                      </div>
+                      <span className="font-mono text-[10px] text-[#5FA374]">Đã xác thực</span>
+                    </div>
 
-                {/* My Rooms List */}
-                <div className="border border-[#E6E3DA] bg-[#FAFAF7] p-4">
-                  <p className="text-xs font-semibold text-[#171B20]">
-                    Phòng đấu của tôi ({myRooms.length})
-                  </p>
-                  {myRooms.length === 0 ? (
-                    <p className="mt-2 text-xs text-[#6E7681]">
-                      Chưa tham gia phòng đấu nào. Hãy tạo phòng mới hoặc nhập mã mời.
-                    </p>
-                  ) : (
-                    <ul className="mt-2 max-h-28 space-y-1.5 overflow-y-auto">
-                      {myRooms.map((rm) => (
-                        <li key={rm.matchId}>
+                    {/* Create & Join Forms */}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <form
+                        onSubmit={(e) => void handleCreateRoom(e)}
+                        className="space-y-2 border border-[#252E38] bg-[#12171D] p-3"
+                      >
+                        <p className="flex items-center gap-1.5 font-semibold text-[#EFE9DC]">
+                          <PlusCircle className="h-3.5 w-3.5 text-[#C6A15B]" />
+                          <span>Tạo phòng mới</span>
+                        </p>
+                        <input
+                          type="text"
+                          data-testid="create-room-title"
+                          value={newRoomTitle}
+                          onChange={(e) => setNewRoomTitle(e.target.value)}
+                          minLength={3}
+                          maxLength={96}
+                          required
+                          className="w-full border border-[#3C4957] bg-[#161C22] px-2 py-1.5 text-xs text-[#EFE9DC]"
+                        />
+                        <select
+                          data-testid="create-room-slot"
+                          value={preferredSlot}
+                          onChange={(e) => setPreferredSlot(e.target.value as HumanSlot)}
+                          className="w-full border border-[#3C4957] bg-[#161C22] px-2 py-1.5 text-xs text-[#EFE9DC]"
+                        >
+                          <option value="NORTH">Phương Bắc (NORTH)</option>
+                          <option value="SOUTH">Phương Nam (SOUTH)</option>
+                        </select>
+                        <button
+                          type="submit"
+                          data-testid="create-room-btn"
+                          disabled={roomBusy}
+                          className="w-full border border-[#C6A15B] bg-[#24322A] py-1.5 text-xs font-semibold text-[#EFE9DC] hover:bg-[#2F4337] disabled:opacity-50"
+                        >
+                          Tạo phòng &amp; Mã mời
+                        </button>
+                      </form>
+
+                      <form
+                        onSubmit={(e) => void handleJoinRoom(e)}
+                        className="space-y-2 border border-[#252E38] bg-[#12171D] p-3"
+                      >
+                        <p className="flex items-center gap-1.5 font-semibold text-[#EFE9DC]">
+                          <Users className="h-3.5 w-3.5 text-[#C6A15B]" />
+                          <span>Tham gia / Reconnect</span>
+                        </p>
+                        <input
+                          type="text"
+                          data-testid="join-invite-code"
+                          value={inviteCodeInput}
+                          onChange={(e) => setInviteCodeInput(e.target.value.toUpperCase())}
+                          required
+                          placeholder="VDN-XXXX-XXXX"
+                          className="w-full border border-[#3C4957] bg-[#161C22] px-2 py-1.5 font-mono text-xs text-[#EFE9DC]"
+                        />
+                        <p className="text-[10px] text-[#758290]">
+                          Thành viên cũ nhập lại mã sẽ giữ nguyên slot gốc.
+                        </p>
+                        <button
+                          type="submit"
+                          data-testid="join-room-btn"
+                          disabled={roomBusy}
+                          className="w-full border border-[#3C4957] bg-[#242D36] py-1.5 text-xs font-semibold text-[#EFE9DC] hover:border-[#C6A15B] disabled:opacity-50"
+                        >
+                          Vào phòng
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* My Rooms */}
+                    {myRooms.length > 0 && (
+                      <div className="border border-[#252E38] bg-[#12171D] p-3">
+                        <p className="mb-2 text-[11px] font-semibold text-[#A8B2BC]">
+                          Phòng của tôi ({myRooms.length})
+                        </p>
+                        <ul className="max-h-28 space-y-1 overflow-y-auto">
+                          {myRooms.map((rm) => (
+                            <li key={rm.matchId}>
+                              <button
+                                type="button"
+                                onClick={() => token && void openRoom(token, rm.matchId)}
+                                className={`flex w-full items-center justify-between border px-2.5 py-1.5 text-left text-xs ${
+                                  activeRoom?.matchId === rm.matchId
+                                    ? 'border-[#C6A15B] bg-[#222B34] font-semibold text-[#F4DC9F]'
+                                    : 'border-[#252E38] bg-[#161C22] text-[#D8D3C6] hover:border-[#3C4957]'
+                                }`}
+                              >
+                                <span className="truncate pr-2">{rm.title}</span>
+                                <span className="shrink-0 font-mono text-[10px] text-[#9CA7B4]">
+                                  {rm.viewerSlot} · {rm.status}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Active Room Controls & Telemetry */}
+                    {activeRoom && (
+                      <div
+                        data-testid="active-room-panel"
+                        className="space-y-3 border border-[#C6A15B]/45 bg-[#12171D] p-3.5"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[#252E38] pb-2.5">
+                          <div>
+                            <div className="flex items-center gap-1.5 font-mono text-[10px] text-[#C6A15B]">
+                              <span>{activeRoom.matchId}</span>
+                              <span>·</span>
+                              <span>{activeRoom.status}</span>
+                              {activeRoom.lockedAtUtc && (
+                                <span className="inline-flex items-center gap-0.5 text-[#9CA7B4]">
+                                  <Lock className="h-2.5 w-2.5" /> Khóa slot
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="mt-0.5 text-sm font-bold text-[#EFE9DC]">
+                              {activeRoom.title}
+                            </h3>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 border border-[#3C4957] bg-[#161C22] px-2 py-1">
+                            <code
+                              data-testid="active-invite-code"
+                              className="font-mono text-[11px] font-bold text-[#F4DC9F]"
+                            >
+                              {activeRoom.inviteCode}
+                            </code>
+                            <button
+                              type="button"
+                              onClick={() => void handleCopyInvite(activeRoom.inviteCode)}
+                              aria-label="Sao chép mã mời"
+                              className="border-l border-[#2B3540] pl-1.5 text-[10px] text-[#C6A15B]"
+                            >
+                              {copiedCode ? 'Đã chép' : <Copy className="h-3 w-3" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* 2 Human Slots */}
+                        <div className="grid grid-cols-2 gap-2">
+                          {(['NORTH', 'SOUTH'] as const).map((slotKey) => {
+                            const info = activeRoom.slots[slotKey];
+                            const isMe = activeRoom.viewerSlot === slotKey;
+                            return (
+                              <div
+                                key={slotKey}
+                                data-testid={`room-slot-${slotKey.toLowerCase()}`}
+                                className={`border p-2.5 ${
+                                  isMe
+                                    ? 'border-[#C6A15B] bg-[#1B222A]'
+                                    : 'border-[#252E38] bg-[#161C22]'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between text-[10px]">
+                                  <span className="font-bold text-[#EFE9DC]">{slotKey}</span>
+                                  {isMe && <span className="font-mono text-[#C6A15B]">Bạn</span>}
+                                </div>
+                                <p className="mt-1 truncate text-xs font-medium text-[#EFE9DC]">
+                                  {info.displayName ?? 'Đang chờ...'}
+                                </p>
+                                <p className="mt-1 flex items-center gap-1 text-[10px] text-[#9CA7B4]">
+                                  <CheckCircle2
+                                    className={`h-3 w-3 ${
+                                      info.ready ? 'text-[#5FA374]' : 'text-[#4A5563]'
+                                    }`}
+                                  />
+                                  <span>{info.ready ? 'Sẵn sàng' : 'Chưa Ready'}</span>
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Live UTC Clock & Sync */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 border border-[#252E38] bg-[#161C22] px-2.5 py-2 font-mono text-[10px] text-[#A8B2BC] tabular-nums">
+                          <span className="inline-flex items-center gap-1 text-[#EFE9DC]">
+                            <Clock className="h-3 w-3 text-[#C6A15B]" />
+                            {activeMatch ? formatUtc(activeMatch.currentUtc) : 'Đang đồng bộ...'}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[#5FA374]">
+                            <Wifi className="h-3 w-3" />
+                            {syncTelemetry.status} · v{activeMatch?.version ?? 0} · #
+                            {syncTelemetry.lastSequence}
+                          </span>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {activeRoom.status === 'LOBBY' && (
+                            <>
+                              <button
+                                type="button"
+                                data-testid="toggle-ready-btn"
+                                disabled={roomBusy}
+                                onClick={() => void handleToggleReady()}
+                                className={`border px-2.5 py-1.5 text-[11px] font-semibold ${
+                                  viewerReady
+                                    ? 'border-[#3C4957] bg-[#161C22] text-[#EFE9DC]'
+                                    : 'border-[#C6A15B] bg-[#24322A] text-[#EFE9DC]'
+                                }`}
+                              >
+                                {viewerReady ? 'Hủy Ready' : 'Sẵn sàng (Ready)'}
+                              </button>
+                              <button
+                                type="button"
+                                data-testid="start-room-btn"
+                                disabled={!canStart || roomBusy}
+                                onClick={() => void handleStartRoom()}
+                                className="border border-[#C6A15B] bg-[#C6A15B] px-2.5 py-1.5 text-[11px] font-bold text-[#12171D] disabled:cursor-not-allowed disabled:border-[#2B3540] disabled:bg-[#1E252D] disabled:text-[#66727F]"
+                              >
+                                Bắt đầu &amp; Khóa slot
+                              </button>
+                            </>
+                          )}
+
+                          {activeRoom.status === 'ACTIVE' && !confirmSurrender && (
+                            <button
+                              type="button"
+                              data-testid="surrender-btn"
+                              disabled={roomBusy}
+                              onClick={() => setConfirmSurrender(true)}
+                              className="inline-flex items-center gap-1 border border-[#B84B3E] bg-[#2A1614] px-2.5 py-1.5 text-[11px] font-semibold text-[#F2B8B0]"
+                            >
+                              <Flag className="h-3 w-3" />
+                              <span>Đầu hàng</span>
+                            </button>
+                          )}
+
+                          {activeRoom.status === 'ACTIVE' && confirmSurrender && (
+                            <div className="flex items-center gap-1.5 border border-[#B84B3E] bg-[#2A1614] px-2 py-1 text-[11px]">
+                              <span>Xác nhận?</span>
+                              <button
+                                type="button"
+                                data-testid="confirm-surrender-btn"
+                                disabled={roomBusy}
+                                onClick={() => void handleSurrender()}
+                                className="bg-[#B84B3E] px-2 py-0.5 font-semibold text-white"
+                              >
+                                Đồng ý
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmSurrender(false)}
+                                className="border border-[#3C4957] px-2 py-0.5"
+                              >
+                                Hủy
+                              </button>
+                            </div>
+                          )}
+
                           <button
                             type="button"
-                            onClick={() => token && void openRoom(token, rm.matchId)}
-                            className={`flex w-full items-center justify-between border px-2.5 py-1.5 text-left text-xs ${
-                              activeRoom?.matchId === rm.matchId
-                                ? 'border-[#2B4C3F] bg-[#EDF3F0] font-semibold text-[#171B20]'
-                                : 'border-[#D9D6CC] bg-[#FFFFFF] text-[#171B20] hover:bg-[#F6F5F0]'
-                            }`}
+                            data-testid="resync-btn"
+                            disabled={roomBusy}
+                            onClick={() => void handleManualResync()}
+                            className="inline-flex items-center gap-1 border border-[#3C4957] bg-[#161C22] px-2.5 py-1.5 text-[11px] text-[#D8D3C6] hover:border-[#C6A15B]"
                           >
-                            <span className="truncate pr-2">{rm.title}</span>
-                            <span className="shrink-0 font-mono text-[11px] text-[#545B66]">
-                              {rm.viewerSlot} · {rm.status}
-                            </span>
+                            <RefreshCw className="h-3 w-3" />
+                            <span>Resync</span>
                           </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+
+                          <button
+                            type="button"
+                            data-testid="verify-room-replay-btn"
+                            disabled={roomBusy}
+                            onClick={() => void handleVerifyReplay()}
+                            className="inline-flex items-center gap-1 border border-[#3C4957] bg-[#161C22] px-2.5 py-1.5 text-[11px] text-[#D8D3C6] hover:border-[#C6A15B]"
+                          >
+                            <ShieldCheck className="h-3 w-3 text-[#5FA374]" />
+                            <span>Replay SHA-256</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            data-testid="backup-audit-btn"
+                            disabled={roomBusy}
+                            onClick={() => void handleFetchBackupAudit()}
+                            className="border border-[#3C4957] bg-[#161C22] px-2.5 py-1.5 text-[11px] text-[#D8D3C6] hover:border-[#C6A15B]"
+                          >
+                            Backup Audit
+                          </button>
+                        </div>
+
+                        {replayReport && (
+                          <div className="border border-[#4F8A64] bg-[#16261E] p-2 font-mono text-[10px] text-[#D8EDE0]">
+                            Replay: {replayReport.verified ? 'KHỚP 100%' : 'SAI LỆCH'} · Cmd:{' '}
+                            {replayReport.replayedCommandCount} · SHA:{' '}
+                            {replayReport.replayedHash.slice(0, 20)}...
+                          </div>
+                        )}
+
+                        {backupSummary && (
+                          <div className="border border-[#3C4957] bg-[#161C22] p-2 font-mono text-[10px] text-[#A8B2BC]">
+                            Backup v{backupSummary.backupVersion} · v{backupSummary.version} ·
+                            Snapshots: {backupSummary.snapshots.length} · secretsIncluded:{' '}
+                            {String(backupSummary.secretsIncluded)}
+                          </div>
+                        )}
+
+                        {/* Nation Ledger Summary */}
+                        {activeMatch && (
+                          <div className="border-t border-[#252E38] pt-2.5">
+                            <p className="mb-1.5 text-[10px] font-semibold tracking-wide text-[#758290]">
+                              SỔ CÁI QUỐC GIA &amp; NPC ĐỘC LẬP (FIXED-POINT ×1000)
+                            </p>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left font-mono text-[10px] tabular-nums">
+                                <thead>
+                                  <tr className="border-b border-[#252E38] text-[#758290]">
+                                    <th className="py-1 pr-2">Phe</th>
+                                    <th className="px-1 py-1 text-right">LT</th>
+                                    <th className="px-1 py-1 text-right">CN</th>
+                                    <th className="pl-1 py-1 text-right">NS</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[#202730]">
+                                  {Object.values(activeMatch.nations).map((n) => (
+                                    <tr key={n.nationId}>
+                                      <td className="py-1 pr-2 font-sans text-[#EFE9DC]">
+                                        {n.code} ({n.slot})
+                                      </td>
+                                      <td className="px-1 py-1 text-right">
+                                        {fpFormat(n.resources.food, 0)}
+                                      </td>
+                                      <td className="px-1 py-1 text-right">
+                                        {fpFormat(n.resources.industrial, 0)}
+                                      </td>
+                                      <td className="pl-1 py-1 text-right">
+                                        {fpFormat(n.resources.treasury, 0)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </aside>
+          )}
+
+          {/* Separate Developer / Diagnostics Workspace Modal (All P01 tools preserved cleanly) */}
+          {activeDrawer === 'diagnostics' && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Không gian Chẩn đoán Kỹ thuật và Nền tảng P01"
+              data-testid="diagnostics-workspace"
+              className="pointer-events-auto absolute inset-0 z-40 flex flex-col bg-[#F6F5F0] text-[#171B20]"
+            >
+              <div className="flex shrink-0 items-center justify-between border-b border-[#D9D6CC] bg-[#12171D] px-4 py-2.5 text-[#EFE9DC]">
+                <div>
+                  <p className="font-mono text-[10px] text-[#C6A15B]">
+                    DEVELOPER &amp; DIAGNOSTICS WORKSPACE · TÁCH BIỆT KHỎI GIAO DIỆN CHIẾN TRƯỜNG
+                  </p>
+                  <h2 className="text-sm font-bold">
+                    Kiểm chứng Nền tảng Authoritative (P01-01 · P01-02 · P01-03 &amp; P02)
+                  </h2>
                 </div>
+                <button
+                  type="button"
+                  data-testid="close-diagnostics-btn"
+                  onClick={() => setActiveDrawer('none')}
+                  className="inline-flex items-center gap-1.5 border border-[#C6A15B] bg-[#242D36] px-3 py-1.5 text-xs font-semibold text-[#F4DC9F] hover:bg-[#2F3A46]"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  <span>Quay lại Bản đồ</span>
+                </button>
               </div>
 
-              {roomError && (
-                <div
-                  role="alert"
-                  className="border border-[#E5B8AF] bg-[#FDF2F0] px-4 py-2.5 text-xs text-[#9A3B26]"
-                >
-                  {roomError}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+                <div className="mx-auto max-w-[1320px] space-y-6">
+                  <SystemStatusPanel
+                    health={health}
+                    loading={healthLoading}
+                    error={healthError}
+                    ws={foundationWs}
+                    onRefresh={onRefreshFoundation}
+                  />
+
+                  <MatchSimulationPanel
+                    health={health}
+                    match={foundationMatch}
+                    loading={foundationMatchLoading}
+                    onMatchLoaded={onFoundationMatchLoaded}
+                  />
                 </div>
-              )}
-
-              {roomNotice && (
-                <div className="border border-[#BFD6CA] bg-[#EFF6F2] px-4 py-2.5 text-xs text-[#214235]">
-                  {roomNotice}
-                </div>
-              )}
-
-              {/* Active Room Lobby & Live Sync Controls */}
-              {activeRoom && (
-                <div
-                  data-testid="active-room-panel"
-                  className="space-y-4 border border-[#2B4C3F]/30 bg-[#FAFAF7] p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E6E3DA] pb-3">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2 text-xs">
-                        <span className="font-mono font-bold text-[#171B20]">
-                          {activeRoom.matchId}
-                        </span>
-                        <span aria-hidden="true">·</span>
-                        <span className="font-semibold text-[#2B4C3F]">
-                          Trạng thái: {activeRoom.status}
-                        </span>
-                        {activeRoom.lockedAtUtc && (
-                          <span className="inline-flex items-center gap-1 text-[#545B66]">
-                            <Lock className="h-3 w-3" /> Đã khóa slot
-                          </span>
-                        )}
-                        {activeRoom.winnerSlot && (
-                          <span className="font-semibold text-[#9A3B26]">
-                            Kết thúc · Thắng: {activeRoom.winnerSlot} ({activeRoom.endedReason})
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="mt-1 text-base font-bold text-[#171B20]">
-                        {activeRoom.title}
-                      </h3>
-                    </div>
-
-                    {/* Invite Code Box */}
-                    <div className="flex items-center gap-2 border border-[#D9D6CC] bg-[#FFFFFF] px-3 py-1.5">
-                      <span className="text-[11px] text-[#545B66]">Mã mời:</span>
-                      <code
-                        data-testid="active-invite-code"
-                        className="font-mono text-xs font-bold text-[#171B20]"
-                      >
-                        {activeRoom.inviteCode}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() => void handleCopyInvite(activeRoom.inviteCode)}
-                        className="border-l border-[#E6E3DA] pl-2 text-xs text-[#2B4C3F] hover:text-[#171B20]"
-                        aria-label="Sao chép mã mời"
-                      >
-                        {copiedCode ? 'Đã chép' : <Copy className="h-3.5 w-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Two Human Slots + Sync Telemetry */}
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                    {(['NORTH', 'SOUTH'] as const).map((slotKey) => {
-                      const info = activeRoom.slots[slotKey];
-                      const isMe = activeRoom.viewerSlot === slotKey;
-                      return (
-                        <div
-                          key={slotKey}
-                          data-testid={`room-slot-${slotKey.toLowerCase()}`}
-                          className={`border p-3 ${
-                            isMe
-                              ? 'border-[#2B4C3F] bg-[#FFFFFF]'
-                              : 'border-[#D9D6CC] bg-[#FFFFFF]'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-bold text-[#171B20]">
-                              {slotKey === 'NORTH' ? 'Phương Bắc (NORTH)' : 'Phương Nam (SOUTH)'}
-                            </span>
-                            {isMe && (
-                              <span className="font-mono text-[11px] font-semibold text-[#2B4C3F]">
-                                Bạn
-                              </span>
-                            )}
-                          </div>
-                          <p className="mt-1 text-sm font-medium text-[#171B20]">
-                            {info.displayName ?? 'Đang chờ người chơi thứ 2...'}
-                          </p>
-                          <p className="mt-1 flex items-center gap-1.5 text-xs text-[#545B66]">
-                            <CheckCircle2
-                              className={`h-3.5 w-3.5 ${
-                                info.ready ? 'text-[#2B4C3F]' : 'text-[#B5B9C0]'
-                              }`}
-                            />
-                            <span>{info.ready ? 'Đã Sẵn sàng (Ready)' : 'Chưa Ready'}</span>
-                          </p>
-                        </div>
-                      );
-                    })}
-
-                    {/* Live UTC Clock & WS Sync Telemetry */}
-                    <div className="border border-[#D9D6CC] bg-[#FFFFFF] p-3 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-[#171B20]">Đồng bộ &amp; Đồng hồ UTC</span>
-                        <span className="inline-flex items-center gap-1 font-mono text-[11px] text-[#2B4C3F]">
-                          <Wifi className="h-3 w-3" />
-                          {syncTelemetry.status}
-                        </span>
-                      </div>
-                      <p className="mt-1.5 flex items-center gap-1 font-mono text-[11px] text-[#171B20] tabular-nums">
-                        <Clock className="h-3 w-3 text-[#545B66]" />
-                        <span>
-                          {activeMatch ? formatUtc(activeMatch.currentUtc) : 'Đang đồng bộ...'}
-                        </span>
-                      </p>
-                      <p className="mt-1 font-mono text-[11px] text-[#545B66] tabular-nums">
-                        v{activeMatch?.version ?? 0} · seq #{syncTelemetry.lastSequence} ·
-                        Snapshots: {snapshots.length}
-                      </p>
-                      {syncTelemetry.nextBackoffMs !== null && (
-                        <p className="mt-1 text-[11px] text-[#9A3B26]">
-                          Mất kết nối · thử lại lần {syncTelemetry.reconnectAttempt} sau{' '}
-                          {syncTelemetry.nextBackoffMs}ms
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Room Lifecycle & Integrity Actions */}
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    {activeRoom.status === 'LOBBY' && (
-                      <>
-                        <button
-                          type="button"
-                          data-testid="toggle-ready-btn"
-                          disabled={roomBusy}
-                          onClick={() => void handleToggleReady()}
-                          className={`border px-3 py-1.5 text-xs font-semibold ${
-                            viewerReady
-                              ? 'border-[#D9D6CC] bg-[#FFFFFF] text-[#171B20]'
-                              : 'border-[#2B4C3F] bg-[#2B4C3F] text-[#FFFFFF]'
-                          }`}
-                        >
-                          {viewerReady ? 'Hủy Sẵn sàng' : 'Xác nhận Sẵn sàng (Ready)'}
-                        </button>
-                        <button
-                          type="button"
-                          data-testid="start-room-btn"
-                          disabled={!canStart || roomBusy}
-                          onClick={() => void handleStartRoom()}
-                          className="border border-[#171B20] bg-[#171B20] px-3 py-1.5 text-xs font-semibold text-[#FFFFFF] disabled:cursor-not-allowed disabled:border-[#D9D6CC] disabled:bg-[#E6E3DA] disabled:text-[#6E7681]"
-                        >
-                          Bắt đầu trận đấu &amp; Khóa slot
-                        </button>
-                        {!canStart && (
-                          <span className="text-[11px] text-[#6E7681]">
-                            {!bothFilled
-                              ? 'Cần thêm người chơi thứ 2 tham gia bằng mã mời.'
-                              : 'Cả Bắc và Nam phải cùng nhấn Sẵn sàng.'}
-                          </span>
-                        )}
-                      </>
-                    )}
-
-                    {activeRoom.status === 'ACTIVE' && !confirmSurrender && (
-                      <button
-                        type="button"
-                        data-testid="surrender-btn"
-                        disabled={roomBusy}
-                        onClick={() => setConfirmSurrender(true)}
-                        className="inline-flex items-center gap-1.5 border border-[#9A3B26] bg-[#FFFFFF] px-3 py-1.5 text-xs font-semibold text-[#9A3B26] hover:bg-[#FDF2F0]"
-                      >
-                        <Flag className="h-3.5 w-3.5" />
-                        <span>Đầu hàng (Surrender)</span>
-                      </button>
-                    )}
-
-                    {activeRoom.status === 'ACTIVE' && confirmSurrender && (
-                      <div className="flex items-center gap-2 border border-[#9A3B26] bg-[#FDF2F0] px-3 py-1 text-xs">
-                        <span className="font-medium text-[#9A3B26]">Xác nhận đầu hàng?</span>
-                        <button
-                          type="button"
-                          data-testid="confirm-surrender-btn"
-                          disabled={roomBusy}
-                          onClick={() => void handleSurrender()}
-                          className="bg-[#9A3B26] px-2.5 py-1 font-semibold text-[#FFFFFF]"
-                        >
-                          Đồng ý đầu hàng
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmSurrender(false)}
-                          className="border border-[#D9D6CC] bg-[#FFFFFF] px-2 py-1 text-[#171B20]"
-                        >
-                          Hủy
-                        </button>
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      data-testid="resync-btn"
-                      disabled={roomBusy}
-                      onClick={() => void handleManualResync()}
-                      className="inline-flex items-center gap-1.5 border border-[#D9D6CC] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#171B20] hover:bg-[#F6F5F0]"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      <span>Đồng bộ lại (Resync)</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      data-testid="verify-room-replay-btn"
-                      disabled={roomBusy}
-                      onClick={() => void handleVerifyReplay()}
-                      className="inline-flex items-center gap-1.5 border border-[#D9D6CC] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#171B20] hover:bg-[#F6F5F0]"
-                    >
-                      <ShieldCheck className="h-3.5 w-3.5 text-[#2B4C3F]" />
-                      <span>Kiểm chứng Replay SHA-256</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      data-testid="backup-audit-btn"
-                      disabled={roomBusy}
-                      onClick={() => void handleFetchBackupAudit()}
-                      className="border border-[#D9D6CC] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#171B20] hover:bg-[#F6F5F0]"
-                    >
-                      Tóm tắt Backup (Không bí mật)
-                    </button>
-                  </div>
-
-                  {replayReport && (
-                    <div className="border border-[#BFD6CA] bg-[#FFFFFF] p-3 font-mono text-[11px] text-[#171B20]">
-                      Replay: {replayReport.verified ? 'KHỚP 100%' : 'SAI LỆCH'} · Commands:{' '}
-                      {replayReport.replayedCommandCount} · SHA-256:{' '}
-                      {replayReport.replayedHash.slice(0, 24)}...
-                    </div>
-                  )}
-
-                  {backupSummary && (
-                    <div className="border border-[#D9D6CC] bg-[#FFFFFF] p-3 font-mono text-[11px] text-[#545B66]">
-                      Backup v{backupSummary.backupVersion} · v{backupSummary.version} · Lệnh:{' '}
-                      {backupSummary.commandCount} · Snapshots: {backupSummary.snapshots.length} ·
-                      secretsIncluded: {String(backupSummary.secretsIncluded)}
-                    </div>
-                  )}
-                </div>
-              )}
+              </div>
             </div>
           )}
-        </div>
-      </section>
+        </main>
+      </div>
 
-      {/* Section 3: Active Match Nation Ledger & Sequenced Events (when a room is open) */}
-      {activeMatch && (
-        <section
-          aria-label="Sổ cái quốc gia & Chuỗi sự kiện phòng đấu"
-          className="grid grid-cols-1 gap-6 lg:grid-cols-2"
-        >
-          {/* Nation Ledgers */}
-          <div className="border border-[#D9D6CC] bg-[#FFFFFF] p-5">
-            <h3 className="text-sm font-semibold text-[#171B20]">
-              Tài nguyên Quốc gia &amp; Chính quyền NPC Độc lập
-            </h3>
-            <p className="mt-0.5 text-xs text-[#6E7681]">
-              Định dạng số cố định (scale 1000). Dữ liệu bí mật server (seed, RNG) không bao giờ gửi xuống client.
-            </p>
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full border-collapse text-left text-xs">
-                <thead>
-                  <tr className="border-b border-[#E6E3DA] text-[#545B66]">
-                    <th className="py-2 pr-3 font-medium">Quốc gia</th>
-                    <th className="px-2 py-2 font-medium">Vai trò</th>
-                    <th className="px-2 py-2 text-right font-medium">Lương thực</th>
-                    <th className="px-2 py-2 text-right font-medium">Công nghiệp</th>
-                    <th className="pl-2 py-2 text-right font-medium">Ngân sách</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#F0EDE5]">
-                  {Object.values(activeMatch.nations).map((n) => (
-                    <tr key={n.nationId}>
-                      <td className="py-2 pr-3 font-medium text-[#171B20]">{n.name}</td>
-                      <td className="px-2 py-2 font-mono text-[11px] text-[#545B66]">{n.slot}</td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums">
-                        {fpFormat(n.resources.food)}
-                      </td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums">
-                        {fpFormat(n.resources.industrial)}
-                      </td>
-                      <td className="pl-2 py-2 text-right font-mono tabular-nums">
-                        {fpFormat(n.resources.treasury)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Sequenced Events & Scheduled Jobs */}
-          <div className="border border-[#D9D6CC] bg-[#FFFFFF] p-5">
-            <h3 className="text-sm font-semibold text-[#171B20]">
-              Nhật ký Sự kiện theo Sequence ({activeMatch.events.length}) &amp; Tác vụ Đã đặt lịch (
-              {Object.keys(activeMatch.jobs).length})
-            </h3>
-            {Object.values(activeMatch.jobs).length > 0 && (
-              <div className="mt-3 space-y-1.5 border-b border-[#E6E3DA] pb-3">
-                {Object.values(activeMatch.jobs).map((j) => (
-                  <div
-                    key={j.jobId}
-                    className="flex flex-wrap items-center justify-between gap-2 bg-[#FAFAF7] px-2.5 py-1.5 text-xs"
-                  >
-                    <span className="font-mono text-[#171B20]">
-                      {j.kind} · {j.jobId}
-                    </span>
-                    <span className="font-mono text-[11px] text-[#2B4C3F]">
-                      {j.status} · Hạn: {formatUtc(j.completesAtUtc)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activeMatch.events.length === 0 ? (
-              <p className="mt-3 text-xs text-[#6E7681]">
-                Chưa có sự kiện nào được phát. Sau khi trận đấu ở trạng thái ACTIVE, hãy chọn một vùng trên bản đồ để đặt lịch dự án.
-              </p>
-            ) : (
-              <ul className="mt-3 max-h-48 space-y-1.5 overflow-y-auto text-xs">
-                {[...activeMatch.events].reverse().map((ev) => (
-                  <li
-                    key={ev.eventId}
-                    className="flex items-start justify-between gap-3 border-b border-[#F0EDE5] pb-1.5 last:border-b-0"
-                  >
-                    <div>
-                      <span className="font-mono font-semibold text-[#2B4C3F]">
-                        #{ev.sequence}
-                      </span>{' '}
-                      <span className="font-medium text-[#171B20]">{ev.payload.type}</span>
-                    </div>
-                    <span className="shrink-0 font-mono text-[11px] text-[#6E7681] tabular-nums">
-                      {formatUtc(ev.occurredAtUtc)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </section>
+      {/* Mobile Compact Bottom Navigation */}
+      {isMobile && (
+        <LeftNavRail
+          activeDrawer={activeDrawer}
+          onSelectDrawer={setActiveDrawer}
+          hasActiveRoom={Boolean(activeRoom)}
+          isMobile={true}
+        />
       )}
     </div>
   );

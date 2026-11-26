@@ -65,5 +65,4 @@ Các hợp đồng mới bổ sung tương thích ngược hoàn toàn với `CO
 - **`PlannedFutureLayerMode`**: khai báo trước các khe lớp `MILITARY`, `WEATHER`, `POLITICAL_INFLUENCE` ở mức kiến trúc (chưa triển khai cơ chế chiến đấu).
 - **`FilteredClientMatchView`** (`projectMatchForViewer`): mở rộng `ClientMatchView`, lược bỏ `serverPrivate` và ẩn `readinessFp`/`supplyFp` của đơn vị không thuộc `viewerNationId` (ghi nhận trong `redactedUnitIds`).
 - **`MatchDeltaEnvelope`**: khung sự kiện đồng bộ WebSocket `room:delta` gồm `matchId`, `fromSequence`, `toSequence`, `version`, `stateHash`, `events`, `serverUtc`.
-
-
+- **Tương thích `P02-06` (Strategic Map Engine 2.0):** Không thay đổi hay phá vỡ bất kỳ trường hợp đồng nào của `CONTRACT_SCHEMA_VERSION = "1.0.0"`. Toàn bộ biên giới động, phân cấp 24 đô thị, Map Mode Registry 2.0 (4 chế độ hoạt động + 8 chế độ lộ trình khóa), nền tảng hiển thị quân sự tuân thủ `redactedUnitIds`, và các mức chất lượng đồ họa chỉ tiêu thụ `FilteredClientMatchView` và payload `GET /api/world/map` hiện hành ở phía client.
