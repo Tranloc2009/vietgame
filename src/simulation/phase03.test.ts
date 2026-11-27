@@ -732,6 +732,28 @@ describe('Phase 03 — Economy, Budget & Facilities (P03-01, P03-02, P03-03)', (
       });
       assert.equal(prodCmdRes.status, 201);
 
+      const northSyncRes = await fetch(`${run1.baseUrl}/api/rooms/${matchId}/sync?sinceSequence=0`, {
+        headers: { Authorization: `Bearer ${northToken}` },
+      });
+      const southSyncRes = await fetch(`${run1.baseUrl}/api/rooms/${matchId}/sync?sinceSequence=0`, {
+        headers: { Authorization: `Bearer ${southToken}` },
+      });
+      assert.equal(northSyncRes.status, 200);
+      assert.equal(southSyncRes.status, 200);
+      const northSync = await northSyncRes.json();
+      const southSync = await southSyncRes.json();
+      assert.equal(northSync.currentSequence, southSync.currentSequence);
+      assert.equal(northSync.missedEvents.some((event: { payload: { type: string } }) =>
+        event.payload.type === 'CONSTRUCTION_QUEUED'), true);
+      for (const projected of [southSync.missedEvents, southSync.match.events]) {
+        const serialized = JSON.stringify(projected);
+        assert.doesNotMatch(serialized, /con_restart_med_1|prd_restart_arms_1/);
+      }
+      const publicDetails = await fetch(`${run1.baseUrl}/api/matches/${matchId}`);
+      assert.equal(publicDetails.status, 404);
+      const publicMatches = await (await fetch(`${run1.baseUrl}/api/matches`)).json();
+      assert.equal(publicMatches.matches.some((match: { matchId: string }) => match.matchId === matchId), false);
+
       // Viewer isolation: South calling /economy must NEVER see North's construction/production/ledger
       const econSouthRes = await fetch(`${run1.baseUrl}/api/rooms/${matchId}/economy`, {
         headers: { Authorization: `Bearer ${southToken}` },

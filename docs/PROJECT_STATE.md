@@ -25,6 +25,12 @@
 
 ---
 
+## Bản tích hợp sau `eaadb11` — P03-01 đến P03-03
+
+Kho và sổ cái, ngân sách, xây dựng và sản xuất đã được kết nối vào menu **Kinh tế** của phòng đấu. Từ bảng vùng đang kiểm soát, người chơi mở thẳng tab **Công trình** với vùng đặt sẵn. Các lệnh dùng cùng đường kiểm quyền và xác nhận của máy chủ. Báo cáo và sự kiện kinh tế riêng được lọc theo phe trên snapshot, đồng bộ và WebSocket. Không thêm migration hoặc thay đổi dữ liệu 72 vùng, 98 hành lang, 24 thành phố.
+
+**Bằng chứng:** TypeScript và build đạt. 48/48 test tự động đạt, gồm kinh tế, replay và phục hồi qua restart. Chrome ở 1440×900 và 390×844 với hai phiên xác thực đã đọc 8 dòng sổ cái, mở dự báo ngân sách, đặt và hủy công trình từ đúng vùng. Phiên đối phương nhận delta theo sequence và không nhận dữ liệu lệnh xây. Các thử nghiệm trình duyệt dùng SVG dự phòng và SQLite test. Production chưa phát hành.
+
 ## 3. Hạng mục Đã Chuyển sang Backlog (Không Triển khai Sớm)
 
 - **Backlog `P11` (Operation Immersion):** Toàn bộ nâng cấp đồ họa bản đồ cao cấp (hillshade DEM đa góc, texture cartography lịch sử, bathymetry Biển Đông, tuyến hậu cần/tiền tuyến động, LOD WebGL đa tầng, lớp thời tiết trực quan) đã được lưu chi tiết tại `docs/GEO_DATA_PROVENANCE.md` mục 3.

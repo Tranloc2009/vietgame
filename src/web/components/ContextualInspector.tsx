@@ -329,7 +329,9 @@ export function ContextualInspector({
                   >
                     {actionBusy
                       ? 'Đang gửi lệnh lên server...'
-                      : 'Đặt lịch Dự án Hạ tầng (15 phút UTC · -10 CN)'}
+                      : match?.phase03Economy
+                        ? 'Xem công trình có thể xây'
+                        : 'Đặt lịch Dự án Hạ tầng (15 phút UTC · -10 CN)'}
                   </button>
                 )}
             </div>

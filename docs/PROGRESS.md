@@ -15,6 +15,14 @@
 | **P02-06** | Operation Living Map — Strategic Map Engine 2.0 | P02-05 | COMPLETED (Chờ duyệt) | Không gian chiến lược toàn màn hình thích ứng Desktop/Tablet/Mobile (`h-dvh`, không cuộn dọc, hỗ trợ iPhone safe-area, tách riêng Developer/Diagnostics workspace cho P01); 6 module engine thuần `src/web/map/` (design tokens, Semantic Zoom L1–L5 + 7 preset + bảo toàn camera, 4 mức đồ họa `LOW`/`MEDIUM`/`HIGH`/`ULTRA`, danh mục 24 đô thị + tránh va chạm nhãn + tìm kiếm tiếng Việt, bóng đổ 2D SRTM 90m cắt mặt nạ bờ biển Việt Nam + biên giới quốc gia động từ server state, nền tảng hiển thị quân sự tương lai tôn trọng fog-of-war không tạo đơn vị giả); Map Mode Registry 2.0 (4 chế độ hoạt động + 8 chế độ lộ trình khóa); Inspector accordion desktop + Bottom Sheet 3 trạng thái di động; Minimap SVG tương tác; SVG fallback tương tác đầy đủ; 34/34 bài kiểm thử đạt (27 hồi quy + 7 mới) & kiểm chứng Playwright 7 viewport / 15 ảnh chụp thực tế |
 
 
+## Tích hợp luồng chơi P03 trên checkpoint `eaadb11`
+
+- Nối màn Kinh tế vào danh mục điều hướng và bảng vùng, dùng sẵn API báo cáo và lệnh Phase 03; HUD ưu tiên kho khả dụng từ Phase 03.
+- Lọc sự kiện kinh tế riêng theo phe ở đầu ra phòng, bảo toàn sequence để client vẫn đồng bộ. Route chẩn đoán nền tảng chỉ trả trận độc lập, còn phòng 2 người dùng route theo thành viên. Không đổi schema SQLite.
+- Đưa trạng thái chờ vẽ vùng và tự chuyển SVG vào checkpoint mới. Giữ cảnh quan, địa giới, lịch 1:1 và chế độ hiển thị của dự án.
+- Kiểm thử mặc định bao gồm hai bộ test kinh tế. Kiểm tra thực chạy: `bun run typecheck`, `bun run test` (48/48), `bun run build`, Chrome desktop và mobile với hai tài khoản thử.
+- Nghiệm thu tại máy: hai bên vào cùng phòng và bắt đầu; bên Bắc vào **Kinh tế**, đọc 8 tài nguyên và ngân sách, đóng bảng, mở **Xem công trình có thể xây** tại Hà Nội, đặt và hủy Cơ sở Y tế. Bên Nam xem tab của mình và không thấy lệnh của Bắc.
+
 ## Ghi chú môi trường & kiểm chứng
 
 - Môi trường không có kho `.git` được khởi tạo sẵn; chủ dự án tự lưu checkpoint / xuất GitHub bằng giao diện Google AI Studio sau khi duyệt (mốc đề xuất: `P02-06-LIVING-MAP`).

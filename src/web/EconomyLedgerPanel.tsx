@@ -102,6 +102,7 @@ export interface EconomyLedgerPanelProps {
   readonly loading: boolean;
   readonly error: string | null;
   readonly busy: boolean;
+  readonly initialRegionId?: string | null;
   readonly onRefresh: () => void;
   readonly onSetTaxRate: (taxRateBps: number) => void;
   readonly onCancelJob: (jobId: string) => void;
@@ -125,6 +126,7 @@ export function EconomyLedgerPanel({
   loading,
   error,
   busy,
+  initialRegionId,
   onRefresh,
   onSetTaxRate,
   onCancelJob,
@@ -136,7 +138,7 @@ export function EconomyLedgerPanel({
   onCancelProduction,
   onToggleFacilityPause,
 }: EconomyLedgerPanelProps) {
-  const [activeTab, setActiveTab] = useState<Phase03TabKey>('ledger');
+  const [activeTab, setActiveTab] = useState<Phase03TabKey>(initialRegionId ? 'facilities' : 'ledger');
   const [ledgerResourceFilter, setLedgerResourceFilter] = useState<ExtendedResourceType | 'ALL'>('ALL');
 
   const isActive = room.status === 'ACTIVE';
@@ -166,11 +168,11 @@ export function EconomyLedgerPanel({
           <p className="flex items-center gap-1.5 text-xs font-medium text-[#2B4C3F]">
             <Coins className="h-3.5 w-3.5" />
             <span>
-              Giai đoạn 03 · Sổ cái 8 Tài nguyên · Ngân sách &amp; Laffer · 8 Loại Công trình (24h thực/ngày · Số liệu hư cấu)
+              Kho, thu chi và năng lực xây dựng của phe bạn
             </span>
           </p>
           <h2 className="mt-0.5 text-lg font-semibold text-[#171B20]">
-            Trung tâm Kinh tế, Ngân sách &amp; Sản xuất Quốc gia
+            Sổ cái và kế hoạch sản xuất
           </h2>
         </div>
 
@@ -214,7 +216,7 @@ export function EconomyLedgerPanel({
             }`}
           >
             <ReceiptText className="h-3.5 w-3.5" />
-            <span>P03-01 · Sổ cái 8 Tài nguyên</span>
+            <span>Sổ cái 8 Tài nguyên</span>
           </button>
           <button
             type="button"
@@ -230,7 +232,7 @@ export function EconomyLedgerPanel({
           >
             <Landmark className="h-3.5 w-3.5" />
             <span>
-              P03-02 · Ngân sách &amp; Dân sự
+              Ngân sách &amp; Dân sự
               {phase03.fiscalForecast24h.warnings.length > 0
                 ? ` (${phase03.fiscalForecast24h.warnings.length})`
                 : ''}
@@ -250,7 +252,7 @@ export function EconomyLedgerPanel({
           >
             <Building2 className="h-3.5 w-3.5" />
             <span>
-              P03-03 · Công trình &amp; Nhà máy ({phase03.facilities.length})
+              Công trình &amp; Nhà máy ({phase03.facilities.length})
             </span>
           </button>
         </div>
@@ -549,6 +551,7 @@ export function EconomyLedgerPanel({
                 match={match}
                 report={phase03}
                 busy={busy}
+                initialRegionId={initialRegionId}
                 onQueueConstruction={onQueueConstruction}
                 onCancelConstruction={onCancelConstruction}
                 onQueueProduction={onQueueProduction}

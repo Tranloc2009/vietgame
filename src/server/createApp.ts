@@ -21,6 +21,7 @@ import {
   parseCommand,
   projectMatchForClient,
   projectMatchForViewer,
+  projectRoomEventsForViewer,
   PublicUser,
   REALTIME_SECONDS_PER_GAME_DAY,
   RegisterPayloadSchema,
@@ -238,21 +239,19 @@ export function createServerRuntime(
   }): void => {
     if (payload.emittedEvents.length === 0) return;
     const serverUtc = clock.nowUtc();
-    const envelope = MatchDeltaEnvelopeSchema.parse({
-      type: 'room:delta',
-      matchId: payload.matchId,
-      fromSequence: payload.fromSequence,
-      toSequence: payload.toSequence,
-      version: payload.version,
-      stateHash: payload.stateHash,
-      events: payload.emittedEvents,
-      serverUtc,
-    });
-    const serialized = JSON.stringify(envelope);
-
     for (const [client, session] of socketSessions.entries()) {
       if (client.readyState === WebSocket.OPEN && session.matchId === payload.matchId) {
-        client.send(serialized);
+        const envelope = MatchDeltaEnvelopeSchema.parse({
+          type: 'room:delta',
+          matchId: payload.matchId,
+          fromSequence: payload.fromSequence,
+          toSequence: payload.toSequence,
+          version: payload.version,
+          stateHash: payload.stateHash,
+          events: projectRoomEventsForViewer(payload.emittedEvents, session.nationId),
+          serverUtc,
+        });
+        client.send(JSON.stringify(envelope));
       }
     }
   };
@@ -528,7 +527,7 @@ export function createServerRuntime(
 
   // 2. List persisted matches (metadata only — zero server secrets)
   app.get('/api/matches', (_req: Request, res: Response) => {
-    const matches = store.listMatches();
+    const matches = store.listMatches().filter(({ matchId }) => !store.getRoomRow(matchId));
     res.json({
       schemaVersion: CONTRACT_SCHEMA_VERSION,
       matches,
@@ -582,12 +581,12 @@ export function createServerRuntime(
       return;
     }
 
-    const loaded = store.getMatch(parsedId.data);
+    const loaded = store.getRoomRow(parsedId.data) ? null : store.getMatch(parsedId.data);
     if (!loaded) {
       res.status(404).json({
         ok: false,
         code: 'MATCH_NOT_FOUND',
-        reason: `Không tìm thấy match "${parsedId.data}".`,
+        reason: 'Không tìm thấy dữ liệu nền tảng.',
       });
       return;
     }
@@ -1239,7 +1238,9 @@ export function createServerRuntime(
       typeof sinceRaw === 'string' && /^\d+$/.test(sinceRaw) ? Number.parseInt(sinceRaw, 10) : null;
 
     const missedEvents =
-      sinceSeq !== null ? store.getEventsSince(parsedId.data, sinceSeq) : [];
+      sinceSeq !== null
+        ? projectRoomEventsForViewer(store.getEventsSince(parsedId.data, sinceSeq), roomRes.room.viewerNationId)
+        : [];
 
     res.json({
       ok: true,
@@ -1325,6 +1326,7 @@ export function createServerRuntime(
 
   // P03-01: Authenticated viewer-scoped economic forecast & traceable resource ledger
   app.get('/api/rooms/:matchId/economy', (req: Request, res: Response) => {
+    res.set('Cache-Control', 'no-store');
     const user = requireAuthenticatedUser(req, res);
     if (!user) return;
 

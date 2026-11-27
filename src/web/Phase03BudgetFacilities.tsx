@@ -507,6 +507,7 @@ export function Phase03BudgetTab({
 }
 
 export interface Phase03FacilitiesTabProps {
+  readonly initialRegionId?: string | null;
   readonly room: MatchRoomSummary;
   readonly match: FilteredClientMatchView;
   readonly report: ClientPhase03NationReport;
@@ -523,6 +524,7 @@ export interface Phase03FacilitiesTabProps {
 }
 
 export function Phase03FacilitiesTab({
+  initialRegionId,
   room,
   match,
   report,
@@ -543,6 +545,7 @@ export function Phase03FacilitiesTab({
   );
 
   const [selectedRegionId, setSelectedRegionId] = useState<string>(
+    controlledRegions.find((region) => region.regionId === initialRegionId)?.regionId ??
     controlledRegions[0]?.regionId ?? ''
   );
 

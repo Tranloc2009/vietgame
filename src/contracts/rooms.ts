@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   ActorIdSchema,
   ClientMatchViewSchema,
+  DomainEvent,
   DomainEventSchema,
   FixedPointIntSchema,
   HumanSlotSchema,
@@ -250,12 +251,36 @@ export const MatchDeltaEnvelopeSchema = z
   .strict();
 export type MatchDeltaEnvelope = z.infer<typeof MatchDeltaEnvelopeSchema>;
 
-/**
- * Projects authoritative MatchState for a specific human viewer slot.
- * - Always strips `serverPrivate` (initialSeed, rngState, hiddenIntelDigest)
- * - Public map/region/resource summaries remain consistent for both players
- * - Opposing faction units have private readiness/supply masked to 0 (fog-of-war)
- */
+/** Filters economy event payloads without renumbering the match's sequence cursor. */
+export function projectRoomEventsForViewer(
+  events: readonly DomainEvent[],
+  viewerNationId: string | null
+): DomainEvent[] {
+  return events.flatMap((event): DomainEvent[] => {
+    const payload = event.payload;
+    switch (payload.type) {
+      case 'RESOURCES_RESERVED':
+      case 'RESERVATION_SETTLED':
+      case 'BUDGET_POLICY_UPDATED':
+      case 'CREDIT_UPDATED':
+      case 'CONSTRUCTION_QUEUED':
+      case 'CONSTRUCTION_COMPLETED':
+      case 'CONSTRUCTION_CANCELLED':
+      case 'PRODUCTION_QUEUED':
+      case 'PRODUCTION_COMPLETED':
+      case 'PRODUCTION_CANCELLED':
+      case 'FACILITY_STATUS_CHANGED':
+        return payload.nationId === viewerNationId ? [event] : [];
+      case 'PHASE03_CYCLE_SETTLED':
+        // The national report already carries the viewer's own capacity and alerts.
+        return [{ ...event, payload: { ...payload, austerityNationIds: [], pausedFacilityIds: [] } }];
+      default:
+        return [event];
+    }
+  });
+}
+
+/** Projects a room snapshot with viewer-scoped economy data and masked unit details. */
 export function projectMatchForViewer(
   state: MatchState,
   stateHash: string,
@@ -333,6 +358,7 @@ export function projectMatchForViewer(
   return FilteredClientMatchViewSchema.parse({
     ...publicFields,
     units: filteredUnits,
+    events: projectRoomEventsForViewer(publicFields.events, viewerNationId),
     ...(filteredLedger !== undefined ? { economicLedger: filteredLedger } : {}),
     ...(filteredPhase03 !== undefined ? { phase03Economy: filteredPhase03 } : {}),
     stateHash,

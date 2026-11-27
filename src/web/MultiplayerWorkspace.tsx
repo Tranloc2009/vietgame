@@ -16,10 +16,8 @@ import {
   X,
 } from 'lucide-react';
 import {
-  ActorIdSchema,
   asUtcEpochMs,
   ClientMatchView,
-  Command,
   CommandIdSchema,
   CONTRACT_SCHEMA_VERSION,
   FilteredClientMatchView,
@@ -36,6 +34,7 @@ import {
 import { HealthPayload, WsLiveState } from './api';
 import { LeftNavRail, WorkspaceDrawerId } from './components/LeftNavRail';
 import { TopCommandBar } from './components/TopCommandBar';
+import { RoomEconomyDrawer, type RoomCommandFactory } from './RoomEconomyDrawer';
 import { MatchSimulationPanel } from './MatchSimulationPanel';
 import {
   BackupAuditSummary,
@@ -144,6 +143,8 @@ export function MultiplayerWorkspace({
   const [copiedCode, setCopiedCode] = useState(false);
   const [confirmSurrender, setConfirmSurrender] = useState(false);
   const [commandBusy, setCommandBusy] = useState(false);
+  const commandInFlight = useRef(false);
+  const [economyRegionId, setEconomyRegionId] = useState<string | null>(null);
   const [replayReport, setReplayReport] = useState<RoomReplayReport | null>(null);
   const [backupSummary, setBackupSummary] = useState<BackupAuditSummary | null>(null);
 
@@ -444,54 +445,72 @@ export function MultiplayerWorkspace({
     }
   };
 
+  const submitActiveRoomCommand = async (makePayload: RoomCommandFactory) => {
+    if (!token || !activeRoom?.viewerActorId || !activeRoom.viewerNationId ||
+      activeRoom.status !== 'ACTIVE' || activeMatch?.matchId !== activeRoom.matchId) {
+      throw new Error('Cần mở phòng đang diễn ra và đồng bộ trạng thái trước khi gửi lệnh.');
+    }
+    if (commandInFlight.current) throw new Error('Đang xử lý lệnh trước.');
+    commandInFlight.current = true;
+    setCommandBusy(true);
+    const useLatest = (match: FilteredClientMatchView) => {
+      setActiveMatch((previous) => previous?.matchId === match.matchId && previous.version <= match.version
+        ? match : previous);
+    };
+    try {
+      const actor = activeMatch.actors[activeRoom.viewerActorId];
+      if (!actor) throw new Error('Chưa đồng bộ được người chỉ huy của phe bạn.');
+      const nonce = crypto.getRandomValues(new Uint32Array(3))
+        .reduce((id, word) => id + word.toString(16).padStart(8, '0'), '');
+      const result = await submitRoomCommand(token, activeRoom.matchId, {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        commandId: CommandIdSchema.parse(`cmd_${nonce}`),
+        matchId: MatchIdSchema.parse(activeRoom.matchId),
+        actorId: actor.actorId,
+        idempotencyKey: IdempotencyKeySchema.parse(`idem_${nonce}`),
+        sequence: actor.lastSequence + 1,
+        expectedVersion: activeMatch.version,
+        issuedAtUtc: asUtcEpochMs(Date.now()),
+        payload: makePayload(NationIdSchema.parse(activeRoom.viewerNationId), nonce),
+      });
+      useLatest(result.match);
+      return result.version;
+    } catch (error) {
+      const refreshed = await fetchRoomDetail(token, activeRoom.matchId).catch(() => null);
+      if (refreshed) useLatest(refreshed.match);
+      throw error;
+    } finally {
+      commandInFlight.current = false;
+      setCommandBusy(false);
+    }
+  };
+
+  const selectDrawer = (drawer: WorkspaceDrawerId) => {
+    if (drawer === 'economy') setEconomyRegionId(null);
+    setActiveDrawer(drawer);
+  };
+
   const handleScheduleRegionAction = async (regionId: string) => {
-    if (
-      !token ||
-      !activeRoom ||
-      !activeMatch ||
-      !activeRoom.viewerActorId ||
-      !activeRoom.viewerNationId
-    ) {
+    if (activeMatch?.phase03Economy) {
+      setEconomyRegionId(regionId);
+      setActiveDrawer('economy');
       return;
     }
-    setCommandBusy(true);
     setRoomError(null);
     setRoomNotice(null);
     try {
-      const actor = activeMatch.actors[activeRoom.viewerActorId];
-      const nextSeq = (actor?.lastSequence ?? 0) + 1;
-      const nonce = Math.random().toString(36).slice(2, 8);
-      const command: Command = {
-        schemaVersion: CONTRACT_SCHEMA_VERSION,
-        commandId: CommandIdSchema.parse(`cmd_job_${nextSeq}_${nonce}`),
-        matchId: MatchIdSchema.parse(activeRoom.matchId),
-        actorId: ActorIdSchema.parse(activeRoom.viewerActorId),
-        idempotencyKey: IdempotencyKeySchema.parse(
-          `idem_job_${activeRoom.matchId}_${nextSeq}_${nonce}`
-        ),
-        sequence: nextSeq,
-        expectedVersion: activeMatch.version,
-        issuedAtUtc: asUtcEpochMs(Date.now()),
-        payload: {
-          type: 'SCHEDULE_JOB',
-          jobId: JobIdSchema.parse(`job_infra_${nextSeq}_${nonce}`),
-          nationId: NationIdSchema.parse(activeRoom.viewerNationId),
-          kind: 'INFRASTRUCTURE_WORK',
-          durationMs: 900_000,
-          costResource: 'industrial',
-          costAmountFp: wholeUnitsToFixedPoint(10),
-        },
-      };
-
-      const res = await submitRoomCommand(token, activeRoom.matchId, command);
-      setActiveMatch(res.match);
-      setRoomNotice(
-        `Đã đặt lịch hạ tầng vùng ${regionId} (v${res.version}, trừ 10 CN, hoàn tất theo UTC server sau 15 phút).`
-      );
-    } catch (err) {
-      setRoomError(err instanceof Error ? err.message : 'Lệnh bị máy chủ từ chối.');
-    } finally {
-      setCommandBusy(false);
+      const version = await submitActiveRoomCommand((nationId, nonce) => ({
+        type: 'SCHEDULE_JOB',
+        jobId: JobIdSchema.parse(`job_infra_${nonce}`),
+        nationId,
+        kind: 'INFRASTRUCTURE_WORK',
+        durationMs: 900_000,
+        costResource: 'industrial',
+        costAmountFp: wholeUnitsToFixedPoint(10),
+      }));
+      setRoomNotice(`Đã đặt lịch dự án hạ tầng quốc gia (v${version}, hoàn tất sau 15 phút).`);
+    } catch (error) {
+      setRoomError(error instanceof Error ? error.message : 'Lệnh bị máy chủ từ chối.');
     }
   };
 
@@ -537,7 +556,7 @@ export function MultiplayerWorkspace({
         {!isMobile && (
           <LeftNavRail
             activeDrawer={activeDrawer}
-            onSelectDrawer={setActiveDrawer}
+            onSelectDrawer={selectDrawer}
             hasActiveRoom={Boolean(activeRoom)}
             isMobile={false}
           />
@@ -590,6 +609,19 @@ export function MultiplayerWorkspace({
           )}
 
           {/* Contextual Multiplayer Rooms Drawer (P02-01..P02-04 preserved 100%) */}
+          {activeDrawer === 'economy' && token && activeRoom && activeMatch?.matchId === activeRoom.matchId && (
+            <RoomEconomyDrawer
+              key={`${activeRoom.matchId}:${activeRoom.viewerNationId}:${economyRegionId ?? ''}`}
+              token={token}
+              room={activeRoom}
+              match={activeMatch}
+              regionId={economyRegionId}
+              commandBusy={commandBusy}
+              onClose={() => setActiveDrawer('none')}
+              onSubmit={submitActiveRoomCommand}
+            />
+          )}
+
           {activeDrawer === 'rooms' && (
             <aside
               aria-label="Phòng đấu 2 người chơi"
@@ -1172,7 +1204,7 @@ export function MultiplayerWorkspace({
       {isMobile && (
         <LeftNavRail
           activeDrawer={activeDrawer}
-          onSelectDrawer={setActiveDrawer}
+          onSelectDrawer={selectDrawer}
           hasActiveRoom={Boolean(activeRoom)}
           isMobile={true}
         />

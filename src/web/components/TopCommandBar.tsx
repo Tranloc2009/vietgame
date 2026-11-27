@@ -38,6 +38,9 @@ export function TopCommandBar({
     activeMatch && activeRoom?.viewerNationId
       ? activeMatch.nations[activeRoom.viewerNationId]
       : null;
+  const availableStock = activeRoom?.viewerNationId && activeMatch?.matchId === activeRoom.matchId
+    ? activeMatch.phase03Economy?.stocksByNation[activeRoom.viewerNationId]?.available
+    : undefined;
   const viewerFaction = getFactionVisual(activeRoom?.viewerNationId);
   const displayUtc = activeMatch?.currentUtc ?? health?.serverUtc ?? null;
 
@@ -82,25 +85,25 @@ export function TopCommandBar({
             <div className="flex items-center gap-1.5" title="Lương thực">
               <span className="text-[#8E9BA8]">LT</span>
               <span className="font-semibold text-[#D6E2C8]">
-                {fpFormat(viewerNation.resources.food, 0)}
+                {fpFormat(availableStock?.food ?? viewerNation.resources.food, 0)}
               </span>
             </div>
-            <div className="flex items-center gap-1.5" title="Công nghiệp">
-              <span className="text-[#8E9BA8]">CN</span>
+            <div className="flex items-center gap-1.5" title={availableStock ? 'Vật tư khả dụng' : 'Công nghiệp'}>
+              <span className="text-[#8E9BA8]">{availableStock ? 'VT' : 'CN'}</span>
               <span className="font-semibold text-[#E5C68B]">
-                {fpFormat(viewerNation.resources.industrial, 0)}
+                {fpFormat(availableStock?.supplies ?? viewerNation.resources.industrial, 0)}
               </span>
             </div>
             <div className="flex items-center gap-1.5" title="Ngân sách">
               <span className="text-[#8E9BA8]">NS</span>
               <span className="font-semibold text-[#EFE9DC]">
-                {fpFormat(viewerNation.resources.treasury, 0)}
+                {fpFormat(availableStock?.money ?? viewerNation.resources.treasury, 0)}
               </span>
             </div>
             <div className="hidden items-center gap-1.5 lg:flex" title="Nhân lực">
               <span className="text-[#8E9BA8]">NL</span>
               <span className="font-semibold text-[#CBD5E1]">
-                {fpFormat(viewerNation.resources.manpower, 0)}
+                {fpFormat(availableStock?.manpower ?? viewerNation.resources.manpower, 0)}
               </span>
             </div>
             <div className="hidden items-center gap-1.5 xl:flex" title="Chính trị">

@@ -1,13 +1,14 @@
 import {
   Activity,
   Compass,
+  Coins,
   Layers,
   Search,
   SlidersHorizontal,
   Users,
 } from 'lucide-react';
 
-export type WorkspaceDrawerId = 'none' | 'search' | 'rooms' | 'display' | 'diagnostics';
+export type WorkspaceDrawerId = 'none' | 'search' | 'rooms' | 'economy' | 'display' | 'diagnostics';
 
 interface LeftNavRailProps {
   readonly activeDrawer: WorkspaceDrawerId;
@@ -47,6 +48,13 @@ const NAV_ITEMS: readonly NavItem[] = [
     icon: Users,
   },
   {
+    id: 'economy',
+    label: 'Kinh tế chiến dịch',
+    shortLabel: 'Kinh tế',
+    testId: 'rail-btn-economy',
+    icon: Coins,
+  },
+  {
     id: 'display',
     label: 'Lớp Địa lý & Cấu hình Đồ họa',
     shortLabel: 'Hiển thị',
@@ -68,14 +76,15 @@ export function LeftNavRail({
   hasActiveRoom,
   isMobile,
 }: LeftNavRailProps) {
+  const items = NAV_ITEMS.filter((item) => item.id !== 'economy' || hasActiveRoom);
   if (isMobile) {
     return (
       <nav
         aria-label="Điều hướng chiến lược di động"
         data-testid="mobile-bottom-nav"
-        className="z-30 grid h-14 shrink-0 grid-cols-5 border-t border-[#2B3540] bg-[#12171D] pb-[env(safe-area-inset-bottom)] text-[#A8B2BC]"
+        className={`z-30 grid h-14 shrink-0 border-t border-[#2B3540] bg-[#12171D] pb-[env(safe-area-inset-bottom)] text-[#A8B2BC] ${hasActiveRoom ? 'grid-cols-6' : 'grid-cols-5'}`}
       >
-        {NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           const active = activeDrawer === item.id;
           return (
@@ -116,7 +125,7 @@ export function LeftNavRail({
       className="z-20 flex w-14 shrink-0 flex-col items-center justify-between border-r border-[#2B3540] bg-[#12171D] py-2.5 text-[#A8B2BC] select-none"
     >
       <div className="flex flex-col items-center gap-1.5">
-        {NAV_ITEMS.slice(0, 4).map((item) => {
+        {items.filter((item) => item.id !== 'diagnostics').map((item) => {
           const Icon = item.icon;
           const active = activeDrawer === item.id;
           return (

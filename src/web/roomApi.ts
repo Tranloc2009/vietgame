@@ -519,11 +519,13 @@ export async function fetchRoomBackupSummary(
 
 export async function fetchRoomEconomy(
   token: string,
-  matchId: string
+  matchId: string,
+  signal?: AbortSignal
 ): Promise<RoomEconomyResponse> {
   const res = await fetch(`/api/rooms/${encodeURIComponent(matchId)}/economy`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
+    signal,
   });
   return parseJsonOrThrow<RoomEconomyResponse>(res);
 }
