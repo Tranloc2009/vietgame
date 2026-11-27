@@ -640,11 +640,18 @@ export class SqliteMatchStore {
     nowUtc: number;
     mode: 'PRODUCTION_REALTIME' | 'PREVIEW_FIXTURE';
     scenarioId?: ScenarioId;
+    aiOpponent?: boolean;
   }): { room: MatchRoomSummary; state: MatchState; stateHash: string } {
     const matchId = MatchIdSchema.parse(`mch_${crypto.randomBytes(6).toString('hex')}`);
     const inviteCode = generateInviteCode();
     const seed = crypto.randomBytes(4).readUInt32BE(0);
     const scenarioId: ScenarioId = options.scenarioId ?? 'vietnam_1955';
+    const isAiMatch = Boolean(options.aiOpponent && scenarioId === 'vietnam_campaign_v1');
+    const aiNationId = isAiMatch
+      ? options.preferredSlot === 'NORTH'
+        ? WORLD_NATIONS.south
+        : WORLD_NATIONS.north
+      : null;
     const initialState =
       scenarioId === 'vietnam_campaign_v1'
         ? createVietnamCampaignMatchState({
@@ -653,6 +660,7 @@ export class SqliteMatchStore {
             seed,
             createdAtUtc: options.nowUtc,
             mode: options.mode,
+            aiControlledNationId: aiNationId,
           })
         : createWorld72MatchState({
             matchId,
@@ -664,10 +672,30 @@ export class SqliteMatchStore {
     const stateHash = computeStateHash(initialState);
     const stateJson = canonicalStringify(initialState);
 
-    const northUserId = options.preferredSlot === 'NORTH' ? options.creator.userId : null;
-    const southUserId = options.preferredSlot === 'SOUTH' ? options.creator.userId : null;
+    const AI_USER_ID = 'usr_ai_commander';
+    const northUserId =
+      options.preferredSlot === 'NORTH'
+        ? options.creator.userId
+        : isAiMatch
+          ? AI_USER_ID
+          : null;
+    const southUserId =
+      options.preferredSlot === 'SOUTH'
+        ? options.creator.userId
+        : isAiMatch
+          ? AI_USER_ID
+          : null;
 
     const tx = this.db.transaction(() => {
+      if (isAiMatch) {
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO users (user_id, username, display_name, password_hash, password_salt, created_at_utc)
+             VALUES (?, '__ai_commander__', 'Bộ Tư Lệnh Máy (AI)', '!LOCKED_AI_ACCOUNT!', 'ai_salt', ?)`
+          )
+          .run(AI_USER_ID, options.nowUtc);
+      }
+
       this.db
         .prepare(
           `INSERT INTO matches (
@@ -695,19 +723,33 @@ export class SqliteMatchStore {
             match_id, scenario_id, invite_code, title, status, created_by_user_id,
             north_user_id, south_user_id, north_ready, south_ready,
             winner_slot, ended_reason, locked_at_utc, created_at_utc, updated_at_utc
-          ) VALUES (?, ?, ?, ?, 'LOBBY', ?, ?, ?, 0, 0, NULL, NULL, NULL, ?, ?)`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)`
         )
         .run(
           matchId,
           scenarioId,
           inviteCode,
           options.title,
+          isAiMatch ? 'ACTIVE' : 'LOBBY',
           options.creator.userId,
           northUserId,
           southUserId,
+          isAiMatch ? 1 : 0,
+          isAiMatch ? 1 : 0,
+          isAiMatch ? options.nowUtc : null,
           options.nowUtc,
           options.nowUtc
         );
+
+      if (isAiMatch) {
+        this.db
+          .prepare(
+            `INSERT INTO scheduled_ticks (match_id, last_tick_utc, tick_count)
+             VALUES (?, ?, 0)
+             ON CONFLICT(match_id) DO UPDATE SET last_tick_utc = excluded.last_tick_utc`
+          )
+          .run(matchId, options.nowUtc);
+      }
 
       this.insertSnapshotInternal(matchId, 0, stateHash, stateJson, options.nowUtc);
     });

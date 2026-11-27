@@ -107,12 +107,15 @@ function buildOnlineLiveState() {
       ownerNationId: city.ownerNationId,
       owned: city.ownerNationId === viewerNationId,
       capital: Boolean(city.capital),
+      coastal: Boolean(city.coastal),
       material: city.material,
       factory: city.factory,
       office: city.office,
       base: city.base || 0,
       bunker: city.bunker || 0,
       hospital: city.hospital || 0,
+      airbase: city.airbase || 0,
+      port: city.port || 0,
       reserve: city.reserve,
       jobs: city.jobs.map((j) => ({
         key: j.key,
@@ -138,6 +141,7 @@ function buildOnlineLiveState() {
       hp: u.hp,
       maxHp: u.maxHp,
       inCombat: Boolean(u.inCombat),
+      stackId: u.stackId || null,
       trip: u.trip
         ? {
             to: u.trip.toCityName,
@@ -186,6 +190,7 @@ function buildOnlineLiveState() {
     victoryTargetVp: cs.victoryTargetVp || 400,
     victoryPointsByNation: cs.victoryPointsByNation || {},
     victory: effectiveVictory,
+    aiControlledNationId: cs.aiControlledNationId || null,
     news: cs.news || [],
     battleReports: cs.battleReports || [],
     study: nation?.study
@@ -220,7 +225,10 @@ function getNextOnlineDeadlineUtc() {
   }
   for (const u of Object.values(cs.units)) {
     if (u.ownerNationId === viewerNationId && u.trip) consider(u.trip.endUtc);
-    if (cs.diplomacy?.relation === "WAR" && (u.inCombat || u.key === "artillery")) {
+    if (
+      cs.diplomacy?.relation === "WAR" &&
+      (u.inCombat || u.key === "artillery" || u.key === "fighter" || u.key === "corvette")
+    ) {
       consider(u.lastCombatUtc ? u.lastCombatUtc + 10000 : cs.timeUtc + 10000);
     }
     if (
@@ -233,6 +241,9 @@ function getNextOnlineDeadlineUtc() {
     ) {
       consider((u.lastHealUtc || cs.timeUtc) + 30000);
     }
+  }
+  if (cs.aiControlledNationId) {
+    consider((cs.aiLastDecisionUtc || cs.startUtc) + 20000);
   }
   return earliest;
 }
@@ -530,12 +541,45 @@ async function sendOnlineDiplomacy(action) {
   const nationId = mp.match.viewerNationId;
   const targetNationId =
     nationId === "nat_north_dir" ? "nat_south_rep" : "nat_north_dir";
-  return sendOnlineCommand({
+  const ok = await sendOnlineCommand({
     type: "CAMPAIGN_SET_DIPLOMACY",
     nationId,
     targetNationId,
     action,
   });
+  if (ok && typeof sfx !== "undefined") {
+    sfx.play(action === "DECLARE_WAR" ? "war" : "click");
+  }
+  return ok;
+}
+
+async function sendOnlineGroupUnits(action, opts = {}) {
+  if (!isOnline()) return false;
+  const nationId = mp.match.viewerNationId;
+  const payload = {
+    type: "CAMPAIGN_GROUP_UNITS",
+    nationId,
+    action,
+  };
+  if (opts.unitIds) payload.unitIds = opts.unitIds;
+  if (opts.stackId) payload.stackId = opts.stackId;
+  if (opts.toCityName !== undefined) {
+    if (opts.toCityName === null) {
+      payload.toCityId = null;
+    } else {
+      const dest = live?.cities?.[opts.toCityName];
+      if (!dest?.cityId) {
+        notice("Thành phố đích không hợp lệ.");
+        return false;
+      }
+      payload.toCityId = dest.cityId;
+    }
+  }
+  const ok = await sendOnlineCommand(payload);
+  if (ok && typeof sfx !== "undefined") {
+    sfx.play(action === "MOVE_STACK" ? "move" : "stack");
+  }
+  return ok;
 }
 
 function renderDiplomacyHtml() {
@@ -693,7 +737,11 @@ function renderCampaignNewsAndBattlesHtml() {
               minute: "2-digit",
             }) +
             "</time><span><b>" +
-            (r.kind === "BOMBARDMENT" ? "◎ Pháo kích" : "⚔ Cận chiến") +
+            (r.kind === "AIRSTRIKE"
+              ? "▲ Không kích"
+              : r.kind === "BOMBARDMENT"
+                ? "◎ Pháo kích"
+                : "⚔ Cận chiến") +
             "</b> · " +
             escapeText(r.summary) +
             "</span></li>",
@@ -737,8 +785,10 @@ function renderVictoryBanner() {
     "</b> · Phương Nam <b>" +
     sVp +
     "</b></p></div>";
+  const wasHidden = el.hidden;
   replaceContent(el, html);
   el.hidden = false;
+  if (wasHidden && typeof sfx !== "undefined") sfx.play("victory");
 }
 
 async function enterOnlineRoom(matchId) {
@@ -952,8 +1002,10 @@ function renderMpPanel() {
       (mp.preferredSlot === "SOUTH" ? "selected" : "") +
       ">Phương Nam (TP. Hồ Chí Minh · Cần Thơ · 30 thành phố)</option>" +
       "</select></div>" +
-      '<button type="submit" id="mpCreateRoom" class="mpBtnPrimary">Tạo phòng chiến dịch</button>' +
-      "</form>" +
+      '<div class="mpRow">' +
+      '<button type="submit" id="mpCreateRoom" class="mpBtnPrimary">Tạo phòng 2 người</button>' +
+      '<button type="button" id="mpCreateAiRoom" class="aiBtn">Đấu với Máy (AI)</button>' +
+      "</div></form>" +
       '<form id="mpJoinForm" class="mpBox">' +
       "<h3>Vào phòng bằng mã mời</h3>" +
       '<div class="mpField"><label for="mpInviteInput">Mã mời (VDN-XXXX-XXXX)</label><input id="mpInviteInput" name="inviteCode" required placeholder="VDN-XXXX-XXXX" value="' +
@@ -1100,6 +1152,43 @@ $("#mpBody").addEventListener("click", async (e) => {
       panel(null);
     } else {
       mp.error = res.data?.reason || "Chưa thể bắt đầu trận.";
+      renderMpPanel();
+    }
+    return;
+  }
+  if (btn.id === "mpCreateAiRoom") {
+    const form = $("#mpCreateForm");
+    const fd = form instanceof HTMLFormElement ? new FormData(form) : null;
+    const title = String(fd?.get("title") || mp.roomTitleDraft || "Chiến dịch vs AI").trim();
+    const preferredSlot = String(fd?.get("preferredSlot") || mp.preferredSlot || "NORTH");
+    mp.roomTitleDraft = title;
+    mp.preferredSlot = preferredSlot;
+    mp.error = "";
+    try {
+      const res = await mpApi("/api/rooms", {
+        method: "POST",
+        body: {
+          title: title.includes("AI") ? title : title + " (vs AI)",
+          preferredSlot,
+          scenarioId: "vietnam_campaign_v1",
+          aiOpponent: true,
+        },
+      });
+      if (!res.ok || !res.data?.ok) {
+        mp.error = res.data?.reason || "Không tạo được trận đấu với máy.";
+        renderMpPanel();
+        return;
+      }
+      mp.room = res.data.room;
+      mp.match = res.data.match;
+      saveMpSession();
+      updateOnlineHeaderBadge();
+      connectOnlineSocket();
+      await refreshMyRooms();
+      panel(null);
+      refresh();
+    } catch (err) {
+      mp.error = err?.message || "Không tạo được trận đấu với máy.";
       renderMpPanel();
     }
     return;

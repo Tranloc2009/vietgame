@@ -213,16 +213,25 @@ function renderCity(c) {
       (c.office || 0) +
       (c.base || 0) +
       (c.bunker || 0) +
-      (c.hospital || 0);
-    const defBonus = Math.min(60, (c.base || 0) * 10 + (c.bunker || 0) * 15);
+      (c.hospital || 0) +
+      (c.airbase || 0) +
+      (c.port || 0);
+    const defBonus = Math.min(
+      60,
+      (c.base || 0) * 10 + (c.bunker || 0) * 15 + (c.airbase || 0) * 5,
+    );
     const bParts = [];
     if (c.factory) bParts.push("Xưởng " + c.factory);
     if (c.office) bParts.push("VP " + c.office);
-    if (c.base) bParts.push("Căn cứ " + c.base);
+    if (c.base) bParts.push("Lục quân " + c.base);
     if (c.bunker) bParts.push("Công sự " + c.bunker);
     if (c.hospital) bParts.push("Quân y " + c.hospital);
+    if (c.airbase) bParts.push("Không quân " + c.airbase);
+    if (c.port) bParts.push("Quân cảng " + c.port);
     return (
-      '<div class="cityStats"><div><small>Sản lượng mỗi ngày</small><b>' +
+      '<div class="cityStats"><div><small>Sản lượng' +
+      (c.coastal ? ' · <span class="coastalTag">Ven biển</span>' : "") +
+      "</small><b>" +
       art(c.material) +
       materials[c.material] +
       " +" +
@@ -278,19 +287,25 @@ function renderCity(c) {
       const st = lane === "mobilize" ? unitStats[key] : null;
       const curLv = lane === "build" ? c[key] || 0 : 0;
       const reason =
-        lane === "build" && p.maxLevel && curLv >= p.maxLevel
-          ? "Đã tối đa"
-          : st?.reqDoctrine && !live.learned.includes(st.reqDoctrine)
-            ? key === "motor"
-              ? "Cần nghiên cứu cấp I"
-              : "Cần " + doctrines[st.reqDoctrine].name
-            : st && (c.office || 0) < st.reqOffice
-              ? "Cần văn phòng cấp " + st.reqOffice
-              : st && (c.base || 0) < st.reqBase
-                ? "Cần căn cứ cấp " + st.reqBase
-                : t.cost.some((n, i) => n * hour > live.balance[i])
-                  ? "Thiếu tài nguyên"
-                  : "";
+        lane === "build" && p.coastalOnly && !c.coastal
+          ? "Chỉ TP ven biển"
+          : lane === "build" && p.maxLevel && curLv >= p.maxLevel
+            ? "Đã tối đa"
+            : st?.reqDoctrine && !live.learned.includes(st.reqDoctrine)
+              ? key === "motor"
+                ? "Cần nghiên cứu cấp I"
+                : "Cần " + doctrines[st.reqDoctrine].name
+              : st && (c.office || 0) < st.reqOffice
+                ? "Cần văn phòng cấp " + st.reqOffice
+                : st && (c.base || 0) < st.reqBase
+                  ? "Cần căn cứ cấp " + st.reqBase
+                  : st && (c.airbase || 0) < (st.reqAirbase || 0)
+                    ? "Cần sân bay cấp " + st.reqAirbase
+                    : st && (c.port || 0) < (st.reqPort || 0)
+                      ? "Cần quân cảng cấp " + st.reqPort
+                      : t.cost.some((n, i) => n * hour > live.balance[i])
+                        ? "Thiếu tài nguyên"
+                        : "";
       const cost = t.cost
         .map((n, i) =>
           n
@@ -319,7 +334,15 @@ function renderCity(c) {
               st.hardAttack +
               " · Thủ " +
               st.defense +
-              (st.ranged ? " · Pháo 1.25°" : st.canConquer ? " · Chiếm đất" : " · Xung kích") +
+              (st.domain === "AIR"
+                ? " · Không kích 2.0°"
+                : st.domain === "NAVAL"
+                  ? " · Hải pháo 1.5°"
+                  : st.ranged
+                    ? " · Pháo 1.25°"
+                    : st.canConquer
+                      ? " · Chiếm đất"
+                      : " · Xung kích") +
               "</div>"
             : "";
       return (
@@ -343,6 +366,96 @@ function renderCity(c) {
       );
     })
     .join("");
+}
+function renderInteractiveGuide() {
+  const el = $("#guideBody");
+  if (!el || !live) return;
+  const ownCities = Object.values(live.cities).filter((c) => c.owned !== false);
+  const ownUnits = live.units.filter((u) => u.owned !== false);
+  const s1 = live.learned.length > 0 || Boolean(live.study);
+  const s2 = ownCities.some(
+    (c) =>
+      (c.office || 0) > 0 ||
+      (c.base || 0) > 0 ||
+      (c.airbase || 0) > 0 ||
+      (c.port || 0) > 0 ||
+      c.jobs.some((j) => projects[j.key]?.lane === "build"),
+  );
+  const s3 =
+    ownUnits.length > 0 ||
+    ownCities.some((c) => c.jobs.some((j) => projects[j.key]?.lane === "mobilize"));
+  const s4 = ownUnits.some((u) => Boolean(u.trip) || Boolean(u.stackId) || u.rev > 0);
+  const s5 = Boolean(
+    live.online &&
+      ((live.stats?.citiesCaptured || 0) > 0 || live.diplomacy?.relation === "WAR"),
+  );
+  const steps = [
+    {
+      done: s1,
+      title: "1. Nghiên cứu công nghệ",
+      desc: "Mở mục Nghiên cứu để học Bộ binh cơ giới, Trinh sát, Pháo, Không quân hoặc Hải quân.",
+      action: "study",
+      btn: "Mở Nghiên cứu",
+    },
+    {
+      done: s2,
+      title: "2. Xây hạ tầng thành phố",
+      desc: "Chọn thành phố và xây Văn phòng tuyển dụng, Căn cứ, Sân bay hoặc Quân cảng (ven biển).",
+      action: "cities",
+      btn: "Chọn Thành phố",
+    },
+    {
+      done: s3,
+      title: "3. Huy động lực lượng",
+      desc: "Chuyển sang thẻ Huy động trong thành phố đã có Văn phòng để tạo quân.",
+      action: "cities",
+      btn: "Đi tới Thành phố",
+    },
+    {
+      done: s4,
+      title: "4. Điều quân & Gộp đạo quân",
+      desc: "Bấm quân hiệu trên bản đồ để Di chuyển, Đổi đích hoặc Gộp nhiều đơn vị thành đạo quân.",
+      action: "units",
+      btn: "Xem Đơn vị",
+    },
+    {
+      done: s5,
+      title: "5. Ngoại giao & Chiến dịch trực tuyến",
+      desc: "Mở Phòng mạng để đấu 2 người hoặc Đấu với Máy (AI), tuyên chiến và đạt 400 điểm chiến thắng.",
+      action: live.online ? "diplomacy" : "online",
+      btn: live.online ? "Mở Ngoại giao" : "Mở Phòng mạng",
+    },
+  ];
+  const doneCount = steps.filter((s) => s.done).length;
+  const html =
+    '<div class="guideIntro"><strong>Tiến độ chỉ huy: ' +
+    doneCount +
+    "/" +
+    steps.length +
+    '</strong><progress max="' +
+    steps.length +
+    '" value="' +
+    doneCount +
+    '"></progress></div><ol class="guideList">' +
+    steps
+      .map(
+        (s) =>
+          '<li class="guideItem ' +
+          (s.done ? "guideDone" : "") +
+          '"><div><b>' +
+          (s.done ? "✓ " : "○ ") +
+          s.title +
+          "</b><small>" +
+          s.desc +
+          '</small></div><button type="button" data-guide-action="' +
+          s.action +
+          '">' +
+          s.btn +
+          "</button></li>",
+      )
+      .join("") +
+    '</ol><p class="guideFoot">Kéo bản đồ để di chuyển · Lăn chuột/chụm ngón để thu phóng · Nhấn Esc để đóng bảng.</p>';
+  replaceContent(el, html);
 }
 function renderMatch() {
   if (!live) return;
@@ -391,7 +504,7 @@ function renderMatch() {
     let title = "",
       html = "";
     if (nationalView === "study") {
-      title = "Nghiên cứu · Lục quân";
+      title = "Nghiên cứu · Lục / Không / Hải quân";
       html = studyHtml();
     } else if (nationalView === "units") {
       const ownUnits = live.units.filter((u) => u.owned !== false);
@@ -470,6 +583,9 @@ function renderMatch() {
   if (typeof renderVictoryBanner === "function") {
     renderVictoryBanner();
   }
+  if (!$("#guide").hidden) {
+    renderInteractiveGuide();
+  }
 }
 $("#cityTabs").onclick = (e) => {
   const b = e.target.closest("[data-city-tab]");
@@ -481,9 +597,27 @@ $("#cityTabs").onclick = (e) => {
 $("#cityBody").onclick = (e) => {
   const b = e.target.closest("button");
   if (!b || b.disabled) return;
-  if (b.dataset.project) command(b.dataset.project, false, 0);
-  if (b.dataset.cancel)
+  if (b.dataset.project) {
+    if (typeof sfx !== "undefined") {
+      sfx.play(projects[b.dataset.project]?.lane === "mobilize" ? "mobilize" : "build");
+    }
+    command(b.dataset.project, false, 0);
+  }
+  if (b.dataset.cancel) {
+    if (typeof sfx !== "undefined") sfx.play("click");
     command(b.dataset.cancel, true, Number(b.dataset.start));
+  }
+};
+$("#guideBody").onclick = (e) => {
+  const b = e.target.closest("[data-guide-action]");
+  if (!b) return;
+  const act = b.dataset.guideAction;
+  if (act === "online") {
+    panel("mpPanel");
+    if (typeof renderMpPanel === "function") renderMpPanel();
+  } else {
+    openNational(act);
+  }
 };
 $("#nationalBody").onclick = (e) => {
   const b = e.target.closest("[data-town]");

@@ -1,4 +1,32 @@
 "use strict";
+const coastalCityNames = new Set([
+  "Hải Phòng",
+  "Hòn Gai",
+  "Cẩm Phả",
+  "Nam Định",
+  "Thái Bình",
+  "Thanh Hóa",
+  "Vinh",
+  "Hà Tĩnh",
+  "Đồng Hới",
+  "Huế",
+  "Đà Nẵng",
+  "Quảng Ngãi",
+  "Quy Nhơn",
+  "Tuy Hòa",
+  "Nha Trang",
+  "Phan Rang",
+  "Phan Thiết",
+  "Vũng Tàu",
+  "TP. Hồ Chí Minh",
+  "Mỹ Tho",
+  "Trúc Giang",
+  "Trà Vinh",
+  "Sóc Trăng",
+  "Bạc Liêu",
+  "Cà Mau",
+  "Rạch Giá",
+]);
 const materials = [
   "Tiếp tế",
   "Linh kiện",
@@ -49,6 +77,23 @@ const projects = {
     maxLevel: 3,
     note: "Hồi máu quân đồn trú định kỳ",
   },
+  airbase: {
+    label: "Căn cứ không quân",
+    lane: "build",
+    seconds: 65,
+    cost: [200, 160, 40, 60, 30, 0, 320],
+    maxLevel: 3,
+    note: "Mở tiêm kích · +5% phòng không/cấp",
+  },
+  port: {
+    label: "Quân cảng",
+    lane: "build",
+    seconds: 65,
+    cost: [190, 170, 50, 50, 20, 0, 310],
+    maxLevel: 3,
+    coastalOnly: true,
+    note: "Chỉ TP ven biển · mở tàu chiến",
+  },
   reserve: {
     label: "Đội dự bị",
     lane: "mobilize",
@@ -59,6 +104,7 @@ const projects = {
 const unitStats = {
   reserve: {
     glyph: "▣",
+    domain: "LAND",
     maxHp: 15,
     softAttack: 3,
     hardAttack: 1,
@@ -66,14 +112,18 @@ const unitStats = {
     moveSeconds: 45,
     canConquer: true,
     ranged: false,
+    rangedRangeDeg: 0,
     visionDeg: 1.25,
     upkeep: [1, 0, 2],
     reqDoctrine: null,
     reqOffice: 1,
     reqBase: 0,
+    reqAirbase: 0,
+    reqPort: 0,
   },
   motor: {
     glyph: "▣",
+    domain: "LAND",
     maxHp: 20,
     softAttack: 6,
     hardAttack: 3,
@@ -81,14 +131,18 @@ const unitStats = {
     moveSeconds: 32,
     canConquer: true,
     ranged: false,
+    rangedRangeDeg: 0,
     visionDeg: 1.35,
     upkeep: [1, 0, 3],
     reqDoctrine: "motor",
     reqOffice: 1,
     reqBase: 0,
+    reqAirbase: 0,
+    reqPort: 0,
   },
   recon: {
     glyph: "◈",
+    domain: "LAND",
     maxHp: 22,
     softAttack: 5,
     hardAttack: 4,
@@ -96,14 +150,18 @@ const unitStats = {
     moveSeconds: 22,
     canConquer: false,
     ranged: false,
+    rangedRangeDeg: 0,
     visionDeg: 2.25,
     upkeep: [1, 1, 4],
     reqDoctrine: "recon",
     reqOffice: 1,
     reqBase: 1,
+    reqAirbase: 0,
+    reqPort: 0,
   },
   tank: {
     glyph: "◆",
+    domain: "LAND",
     maxHp: 42,
     softAttack: 9,
     hardAttack: 12,
@@ -111,14 +169,18 @@ const unitStats = {
     moveSeconds: 36,
     canConquer: false,
     ranged: false,
+    rangedRangeDeg: 0,
     visionDeg: 1.35,
     upkeep: [2, 2, 7],
     reqDoctrine: "tank",
     reqOffice: 1,
     reqBase: 2,
+    reqAirbase: 0,
+    reqPort: 0,
   },
   artillery: {
     glyph: "◎",
+    domain: "LAND",
     maxHp: 16,
     softAttack: 7,
     hardAttack: 5,
@@ -126,11 +188,52 @@ const unitStats = {
     moveSeconds: 42,
     canConquer: false,
     ranged: true,
+    rangedRangeDeg: 1.25,
     visionDeg: 1.45,
     upkeep: [2, 0, 5],
     reqDoctrine: "artillery",
     reqOffice: 1,
     reqBase: 1,
+    reqAirbase: 0,
+    reqPort: 0,
+  },
+  fighter: {
+    glyph: "▲",
+    domain: "AIR",
+    maxHp: 24,
+    softAttack: 8,
+    hardAttack: 8,
+    defense: 6,
+    moveSeconds: 14,
+    canConquer: false,
+    ranged: true,
+    rangedRangeDeg: 2.0,
+    visionDeg: 2.6,
+    upkeep: [1, 2, 6],
+    reqDoctrine: "fighter",
+    reqOffice: 1,
+    reqBase: 0,
+    reqAirbase: 1,
+    reqPort: 0,
+  },
+  corvette: {
+    glyph: "⬡",
+    domain: "NAVAL",
+    maxHp: 34,
+    softAttack: 8,
+    hardAttack: 10,
+    defense: 9,
+    moveSeconds: 28,
+    canConquer: false,
+    ranged: true,
+    rangedRangeDeg: 1.5,
+    visionDeg: 2.0,
+    upkeep: [1, 2, 6],
+    reqDoctrine: "corvette",
+    reqOffice: 1,
+    reqBase: 0,
+    reqAirbase: 0,
+    reqPort: 1,
   },
 };
 const hour = 3600000;
@@ -140,11 +243,14 @@ function startCampaign(names, now) {
       name,
       {
         material: i % 5,
+        coastal: coastalCityNames.has(name),
         factory: 0,
         office: 0,
         base: 0,
         bunker: 0,
         hospital: 0,
+        airbase: 0,
+        port: 0,
         reserve: 0,
         jobs: [],
       },
@@ -233,6 +339,8 @@ function order(s, city, key, cancel = false) {
     return;
   }
   if (j) throw Error("Hàng đợi này đang bận.");
+  if (p.lane === "build" && p.coastalOnly && !c.coastal)
+    throw Error("Quân cảng chỉ xây được tại thành phố ven biển.");
   if (p.lane === "build" && p.maxLevel && (c[key] || 0) >= p.maxLevel)
     throw Error(p.label + " đã đạt cấp tối đa.");
   if (p.lane === "mobilize") {
@@ -243,6 +351,10 @@ function order(s, city, key, cancel = false) {
       throw Error("Cần văn phòng tuyển dụng cấp " + st.reqOffice + ".");
     if (st && (c.base || 0) < st.reqBase)
       throw Error("Cần căn cứ lục quân cấp " + st.reqBase + ".");
+    if (st && (c.airbase || 0) < (st.reqAirbase || 0))
+      throw Error("Cần căn cứ không quân cấp " + st.reqAirbase + ".");
+    if (st && (c.port || 0) < (st.reqPort || 0))
+      throw Error("Cần quân cảng cấp " + st.reqPort + ".");
   }
   const { cost, duration } = terms(c, key);
   if (cost.some((v, i) => v * hour > s.balance[i]))

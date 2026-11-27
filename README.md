@@ -1,15 +1,15 @@
 # VIETNAM: THE DIVIDED NATION
 
-## Cập nhật mốc T05 · 27/11/2026 (Công nghệ WW3, Ngoại giao, Giao tranh, Chiếm đóng & Điểm chiến thắng)
+## Cập nhật mốc T06 · 27/11/2026 (Không/Hải quân, Gộp/Tách đạo quân, AI tất định, Rate-Limit, Âm thanh & Hướng dẫn tương tác)
 
-Mở trang chủ `/` (hoặc mở trực tiếp [index.html](index.html) khi chơi ngoại tuyến) để chơi chiến dịch Việt Nam trên bản đồ mới gồm 63 vùng hành chính lịch sử và 60 điểm dân cư. Mã nguồn, dữ liệu địa lý và hướng dẫn đóng gói nằm trong [campaign](campaign/NGUON.md).
+Mở trang chủ `/` (hoặc mở trực tiếp [index.html](index.html) khi chơi ngoại tuyến) để chơi chiến dịch Việt Nam trên bản đồ mới gồm 63 vùng hành chính lịch sử và 60 điểm dân cư (26 thành phố ven biển). Mã nguồn, dữ liệu địa lý và hướng dẫn đóng gói nằm trong [campaign](campaign/NGUON.md).
 
-- **Chơi đơn ngoại tuyến (IndexedDB):** giữ nguyên bản lưu cũ (tự động nâng cấp dữ liệu mới) cùng đầy đủ 5 công trình, 5 công nghệ 3 nhánh Lục quân, huy động, chọn quân, di chuyển, dừng và đổi đích.
-- **Phòng hai người trên bản đồ Việt Nam mới (`vietnam_campaign_v1`):** bấm nút **Phòng mạng** ngay trên trang chủ `/` khi chạy máy chủ. Hai tài khoản độc lập đăng ký/đăng nhập, tạo hoặc vào phòng bằng mã mời, sẵn sàng và bắt đầu ngay trên bản đồ Việt Nam mới (chia cân bằng 30 thành phố Phương Bắc / 30 thành phố Phương Nam, 320 vs 320 điểm chiến thắng, mục tiêu **400 VP**). Toàn bộ vòng lặp WW3 đều chạy tất định trên máy chủ SQLite + WebSocket:
-  - **Cây công nghệ 3 nhánh & 5 công trình:** Bộ binh cơ giới I/II, Xe trinh sát chiến đấu I (`2.25°` radar), Xe tăng chủ lực I, Pháo binh dã chiến I (`1.25°` pháo kích); Xưởng công nghiệp, Văn phòng tuyển dụng, Căn cứ lục quân, Hầm công sự (phòng thủ tới +60%) và Bệnh viện quân y (hồi HP mỗi 30 giây).
-  - **Ngoại giao & Tình báo:** Hòa bình / Tuyên chiến / Đề nghị & Chấp nhận hòa bình / Chia sẻ tình báo ngay trong mục **Ngoại giao**; ẩn hoàn toàn hàng đợi, kho, cấp công trình và tuyến hành quân đối phương theo tầm nhìn.
-  - **Combat Engine, Chiếm đóng & Kết trận:** Giao tranh cận chiến theo tick 10 giây, pháo kích tầm xa không chịu phản công, luật chỉ bộ binh (`canConquer`) chiếm thành phố, xóa hàng đợi thành phố bị chiếm, Nhật báo chiến sự & Báo cáo chiến đấu trong mục **Báo chí**, tự động kết thúc phòng trong SQLite khi đạt 400 VP / tổng chiếm đóng / đầu hàng và hiển thị bảng kết trận.
-- **Phòng 1955 cũ (`/rooms.html`):** giữ nguyên kịch bản 72 vùng, dữ liệu, migration (`001`–`004`) và bộ hồi quy để đối chiếu hành vi. Chi tiết nghiệm thu nằm ở [báo cáo kiểm thử](docs/TEST_REPORT.md) và [mốc kế tiếp](docs/NEXT_TASK.md).
+- **Chơi đơn ngoại tuyến (IndexedDB):** giữ nguyên bản lưu cũ (tự động nâng cấp dữ liệu mới) cùng đủ 7 công trình, 7 công nghệ 5 nhánh (Lục/Không/Hải quân), gộp/tách đạo quân, âm thanh Web Audio và hướng dẫn nhiệm vụ tương tác.
+- **Phòng trực tuyến & Đấu với Máy (AI) trên bản đồ Việt Nam mới (`vietnam_campaign_v1`):** bấm nút **Phòng mạng** ngay trên trang chủ `/` khi chạy máy chủ để chơi 2 người (tạo/vào phòng bằng mã mời) hoặc bấm **Đấu với Máy (AI)** để mở trận tức thì với Bộ Tư Lệnh Máy tất định trên máy chủ (không dùng AI API trả phí, khớp replay SHA-256 sau khởi động lại). Toàn bộ vòng lặp WW3 chạy trên máy chủ SQLite + WebSocket (có bảo vệ rate-limiting HTTP/WS):
+  - **Cây công nghệ 5 nhánh & 7 công trình:** Bộ binh cơ giới I/II, Xe trinh sát (`2.25°` radar), Xe tăng chủ lực, Pháo binh dã chiến (`1.25°` pháo kích), Tiêm kích đánh chặn (`14s` bay thẳng, không kích `2.0°`, radar `2.6°`) và Tàu hộ vệ tên lửa (`28s` tuyến Biển Đông, hải pháo `1.5°`, chỉ cơ động ven biển); Xưởng công nghiệp, Văn phòng tuyển dụng, Căn cứ lục quân, Hầm công sự (thủ tới `+60%`), Bệnh viện quân y (hồi máu `30s`), Căn cứ không quân và Quân cảng (chỉ xây tại 26 thành phố ven biển).
+  - **Đạo quân hợp thành (Stack/Split):** Gộp nhiều đơn vị cùng vị trí thành đạo quân hợp thành hành quân đồng bộ theo tốc độ đơn vị chậm nhất, dừng nguyên tử và tách đơn vị linh hoạt.
+  - **Ngoại giao, Chiến tranh, Chiếm đóng & Kết trận:** Hòa bình / Tuyên chiến / Đình chiến / Chia sẻ tình báo trong mục **Ngoại giao**; giao tranh cận chiến, pháo kích, hải pháo & không kích; luật chỉ bộ binh chiếm thành phố, xóa hàng đợi địch; Nhật báo & Báo cáo chiến đấu trong mục **Báo chí**; kết trận nguyên tử khi đạt `400 VP` / tổng chiếm đóng / đầu hàng và hiện bảng kết trận.
+- **Phòng 1955 cũ (`/rooms.html`):** giữ nguyên kịch bản 72 vùng, dữ liệu, migration (`001`–`004`) và bộ hồi quy (bundle ứng dụng tách gọn còn `259 kB`). Chi tiết nghiệm thu nằm ở [báo cáo kiểm thử](docs/TEST_REPORT.md) và [mốc kế tiếp](docs/NEXT_TASK.md).
 
 ## Nền tảng phòng nhiều người chơi
 

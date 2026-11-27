@@ -1,10 +1,13 @@
 import {
   asFixedPoint,
   asUtcEpochMs,
+  CAMPAIGN_AI_DECISION_INTERVAL_MS,
+  CAMPAIGN_AIR_RANGE_DEG,
   CAMPAIGN_COMBAT_TICK_MS,
   CAMPAIGN_HEAL_TICK_MS,
   CAMPAIGN_HOUR_MS,
   CAMPAIGN_MELEE_RANGE_DEG,
+  CAMPAIGN_NAVAL_RANGE_DEG,
   CAMPAIGN_OBSERVATION_RADIUS_DEG,
   CAMPAIGN_RANGED_RANGE_DEG,
   CampaignBattleReport,
@@ -54,7 +57,7 @@ export const CAMPAIGN_MATERIAL_LABELS: readonly string[] = [
   'Tiền',
 ];
 
-export type CampaignTechBranch = 'INFANTRY' | 'ARMORED' | 'SUPPORT';
+export type CampaignTechBranch = 'INFANTRY' | 'ARMORED' | 'SUPPORT' | 'AIR' | 'NAVAL';
 
 export interface CampaignDoctrineSpec {
   readonly key: CampaignDoctrineKey;
@@ -118,6 +121,26 @@ export const CAMPAIGN_DOCTRINE_CATALOG: Readonly<Record<CampaignDoctrineKey, Cam
     seconds: 60,
     requires: 'motor',
   },
+  fighter: {
+    key: 'fighter',
+    branch: 'AIR',
+    tier: 1,
+    name: 'Tiêm kích đánh chặn I',
+    description: 'Mở huy động tiêm kích tại Căn cứ không quân: bay đường thẳng 14s, không kích 2.0°, radar 2.6°.',
+    cost: [180, 160, 80, 90, 80, 0, 380],
+    seconds: 60,
+    requires: null,
+  },
+  corvette: {
+    key: 'corvette',
+    branch: 'NAVAL',
+    tier: 1,
+    name: 'Tàu hộ vệ tên lửa I',
+    description: 'Mở huy động tàu chiến tại Quân cảng ven biển: cơ động đường biển 28s, hỏa lực bờ biển 1.5°.',
+    cost: [170, 180, 90, 70, 60, 0, 360],
+    seconds: 60,
+    requires: null,
+  },
 };
 
 export interface CampaignProjectSpec {
@@ -170,6 +193,22 @@ export const CAMPAIGN_PROJECT_CATALOG: Readonly<Record<CampaignProjectKey, Campa
     cost: [160, 80, 0, 40, 0, 0, 250],
     maxLevel: 3,
   },
+  airbase: {
+    key: 'airbase',
+    label: 'Căn cứ không quân',
+    lane: 'build',
+    seconds: 65,
+    cost: [200, 160, 40, 60, 30, 0, 320],
+    maxLevel: 3,
+  },
+  port: {
+    key: 'port',
+    label: 'Quân cảng',
+    lane: 'build',
+    seconds: 65,
+    cost: [190, 170, 50, 50, 20, 0, 310],
+    maxLevel: 3,
+  },
   reserve: {
     key: 'reserve',
     label: 'Đội dự bị',
@@ -205,10 +244,25 @@ export const CAMPAIGN_PROJECT_CATALOG: Readonly<Record<CampaignProjectKey, Campa
     seconds: 60,
     cost: [190, 140, 30, 50, 30, 75, 330],
   },
+  fighter: {
+    key: 'fighter',
+    label: 'Tiêm kích đánh chặn',
+    lane: 'mobilize',
+    seconds: 60,
+    cost: [160, 180, 90, 80, 50, 55, 420],
+  },
+  corvette: {
+    key: 'corvette',
+    label: 'Tàu hộ vệ tên lửa',
+    lane: 'mobilize',
+    seconds: 65,
+    cost: [170, 190, 100, 60, 40, 70, 400],
+  },
 };
 
 export interface CampaignUnitCombatSpec {
   readonly key: CampaignUnitKey;
+  readonly domain: 'LAND' | 'AIR' | 'NAVAL';
   readonly armorClass: 'SOFT' | 'HARD';
   readonly maxHp: number;
   readonly softAttack: number;
@@ -217,17 +271,21 @@ export interface CampaignUnitCombatSpec {
   readonly moveSeconds: number;
   readonly canConquer: boolean;
   readonly ranged: boolean;
+  readonly rangedRangeDeg: number;
   readonly upkeepSupplies: number;
   readonly upkeepFuel: number;
   readonly upkeepMoney: number;
   readonly requiredDoctrine: CampaignDoctrineKey | null;
   readonly requiredOffice: number;
   readonly requiredBase: number;
+  readonly requiredAirbase: number;
+  readonly requiredPort: number;
 }
 
 export const CAMPAIGN_UNIT_STATS: Readonly<Record<CampaignUnitKey, CampaignUnitCombatSpec>> = {
   reserve: {
     key: 'reserve',
+    domain: 'LAND',
     armorClass: 'SOFT',
     maxHp: 15,
     softAttack: 3,
@@ -236,15 +294,19 @@ export const CAMPAIGN_UNIT_STATS: Readonly<Record<CampaignUnitKey, CampaignUnitC
     moveSeconds: 45,
     canConquer: true,
     ranged: false,
+    rangedRangeDeg: 0,
     upkeepSupplies: 1,
     upkeepFuel: 0,
     upkeepMoney: 2,
     requiredDoctrine: null,
     requiredOffice: 1,
     requiredBase: 0,
+    requiredAirbase: 0,
+    requiredPort: 0,
   },
   motor: {
     key: 'motor',
+    domain: 'LAND',
     armorClass: 'SOFT',
     maxHp: 20,
     softAttack: 6,
@@ -253,15 +315,19 @@ export const CAMPAIGN_UNIT_STATS: Readonly<Record<CampaignUnitKey, CampaignUnitC
     moveSeconds: 32,
     canConquer: true,
     ranged: false,
+    rangedRangeDeg: 0,
     upkeepSupplies: 1,
     upkeepFuel: 0,
     upkeepMoney: 3,
     requiredDoctrine: 'motor',
     requiredOffice: 1,
     requiredBase: 0,
+    requiredAirbase: 0,
+    requiredPort: 0,
   },
   recon: {
     key: 'recon',
+    domain: 'LAND',
     armorClass: 'HARD',
     maxHp: 22,
     softAttack: 5,
@@ -270,15 +336,19 @@ export const CAMPAIGN_UNIT_STATS: Readonly<Record<CampaignUnitKey, CampaignUnitC
     moveSeconds: 22,
     canConquer: false,
     ranged: false,
+    rangedRangeDeg: 0,
     upkeepSupplies: 1,
     upkeepFuel: 1,
     upkeepMoney: 4,
     requiredDoctrine: 'recon',
     requiredOffice: 1,
     requiredBase: 1,
+    requiredAirbase: 0,
+    requiredPort: 0,
   },
   tank: {
     key: 'tank',
+    domain: 'LAND',
     armorClass: 'HARD',
     maxHp: 42,
     softAttack: 9,
@@ -287,15 +357,19 @@ export const CAMPAIGN_UNIT_STATS: Readonly<Record<CampaignUnitKey, CampaignUnitC
     moveSeconds: 36,
     canConquer: false,
     ranged: false,
+    rangedRangeDeg: 0,
     upkeepSupplies: 2,
     upkeepFuel: 2,
     upkeepMoney: 7,
     requiredDoctrine: 'tank',
     requiredOffice: 1,
     requiredBase: 2,
+    requiredAirbase: 0,
+    requiredPort: 0,
   },
   artillery: {
     key: 'artillery',
+    domain: 'LAND',
     armorClass: 'SOFT',
     maxHp: 16,
     softAttack: 7,
@@ -304,12 +378,57 @@ export const CAMPAIGN_UNIT_STATS: Readonly<Record<CampaignUnitKey, CampaignUnitC
     moveSeconds: 42,
     canConquer: false,
     ranged: true,
+    rangedRangeDeg: CAMPAIGN_RANGED_RANGE_DEG,
     upkeepSupplies: 2,
     upkeepFuel: 0,
     upkeepMoney: 5,
     requiredDoctrine: 'artillery',
     requiredOffice: 1,
     requiredBase: 1,
+    requiredAirbase: 0,
+    requiredPort: 0,
+  },
+  fighter: {
+    key: 'fighter',
+    domain: 'AIR',
+    armorClass: 'HARD',
+    maxHp: 24,
+    softAttack: 8,
+    hardAttack: 8,
+    defense: 6,
+    moveSeconds: 14,
+    canConquer: false,
+    ranged: true,
+    rangedRangeDeg: CAMPAIGN_AIR_RANGE_DEG,
+    upkeepSupplies: 1,
+    upkeepFuel: 2,
+    upkeepMoney: 6,
+    requiredDoctrine: 'fighter',
+    requiredOffice: 1,
+    requiredBase: 0,
+    requiredAirbase: 1,
+    requiredPort: 0,
+  },
+  corvette: {
+    key: 'corvette',
+    domain: 'NAVAL',
+    armorClass: 'HARD',
+    maxHp: 34,
+    softAttack: 8,
+    hardAttack: 10,
+    defense: 9,
+    moveSeconds: 28,
+    canConquer: false,
+    ranged: true,
+    rangedRangeDeg: CAMPAIGN_NAVAL_RANGE_DEG,
+    upkeepSupplies: 1,
+    upkeepFuel: 2,
+    upkeepMoney: 6,
+    requiredDoctrine: 'corvette',
+    requiredOffice: 1,
+    requiredBase: 0,
+    requiredAirbase: 0,
+    requiredPort: 1,
   },
 };
 
@@ -320,6 +439,8 @@ export const CAMPAIGN_MOVE_DURATION_SECONDS = {
   recon: 22,
   tank: 36,
   artillery: 42,
+  fighter: 14,
+  corvette: 28,
 } as const;
 
 const CAMPAIGN_SPINE_CITY_NAMES: readonly string[] = [
@@ -378,6 +499,8 @@ type MutableCampaignState = {
   victoryPointsByNation: Record<string, number>;
   diplomacy: CampaignDiplomacyState;
   victory: CampaignMatchState['victory'];
+  aiControlledNationId: NationId | null;
+  aiLastDecisionUtc: UtcEpochMs | null;
   nations: Record<string, CampaignNationState>;
   cities: Record<string, CampaignCityState>;
   units: Record<string, CampaignUnitState>;
@@ -406,9 +529,12 @@ function cloneCampaignState(state: CampaignMatchState): MutableCampaignState {
   for (const [id, c] of Object.entries(state.cities)) {
     cities[id] = {
       ...c,
+      coastal: c.coastal ?? false,
       base: c.base ?? 0,
       bunker: c.bunker ?? 0,
       hospital: c.hospital ?? 0,
+      airbase: c.airbase ?? 0,
+      port: c.port ?? 0,
       jobs: c.jobs.map((j) => ({
         ...j,
         cost: [...j.cost] as CampaignResourceTuple,
@@ -425,6 +551,7 @@ function cloneCampaignState(state: CampaignMatchState): MutableCampaignState {
       inCombat: u.inCombat ?? false,
       lastCombatUtc: u.lastCombatUtc ?? null,
       lastHealUtc: u.lastHealUtc ?? null,
+      stackId: u.stackId ?? null,
       position: { ...u.position },
       trip: u.trip
         ? {
@@ -453,6 +580,8 @@ function cloneCampaignState(state: CampaignMatchState): MutableCampaignState {
     victory: state.victory
       ? { ...state.victory, scoresByNation: { ...state.victory.scoresByNation } }
       : null,
+    aiControlledNationId: state.aiControlledNationId ?? null,
+    aiLastDecisionUtc: state.aiLastDecisionUtc ?? null,
     nations,
     cities,
     units,
@@ -563,6 +692,10 @@ function getBuildingLevel(city: CampaignCityState, key: CampaignProjectKey): num
       return city.bunker ?? 0;
     case 'hospital':
       return city.hospital ?? 0;
+    case 'airbase':
+      return city.airbase ?? 0;
+    case 'port':
+      return city.port ?? 0;
     default:
       return 0;
   }
@@ -589,13 +722,30 @@ export function computeCampaignProjectTerms(
 export function buildCampaignPath(
   cities: Readonly<Record<string, CampaignCityState>>,
   from: CampaignGeoPoint,
-  destCity: CampaignCityState
+  destCity: CampaignCityState,
+  domain: 'LAND' | 'AIR' | 'NAVAL' = 'LAND'
 ): CampaignGeoPoint[] {
+  const dest: CampaignGeoPoint = { lon: destCity.lon, lat: destCity.lat };
+  if (domain === 'AIR') {
+    return [{ lon: from.lon, lat: from.lat }, dest];
+  }
+  if (domain === 'NAVAL') {
+    // Coastal sea lane offshore in Biển Đông
+    const midLat = Math.round(((from.lat + dest.lat) / 2) * 1_000_000) / 1_000_000;
+    const seaLon =
+      Math.round((Math.max(from.lon, dest.lon) + 0.38) * 1_000_000) / 1_000_000;
+    return [
+      { lon: from.lon, lat: from.lat },
+      { lon: Math.round((from.lon + 0.25) * 1_000_000) / 1_000_000, lat: from.lat },
+      { lon: seaLon, lat: midLat },
+      { lon: Math.round((dest.lon + 0.25) * 1_000_000) / 1_000_000, lat: dest.lat },
+      dest,
+    ];
+  }
   const byName = new Map<string, CampaignCityState>();
   for (const city of Object.values(cities)) {
     byName.set(city.name, city);
   }
-  const dest: CampaignGeoPoint = { lon: destCity.lon, lat: destCity.lat };
   const south = from.lat > dest.lat;
   const minLat = Math.min(from.lat, dest.lat) + 0.22;
   const maxLat = Math.max(from.lat, dest.lat) - 0.22;
@@ -742,7 +892,10 @@ function computeUnitAttackDamage(
   if (defender.cityId) {
     const city = cs.cities[defender.cityId];
     if (city && city.ownerNationId === defender.ownerNationId) {
-      entrenchmentPct = Math.min(60, (city.base ?? 0) * 10 + (city.bunker ?? 0) * 15);
+      entrenchmentPct = Math.min(
+        60,
+        (city.base ?? 0) * 10 + (city.bunker ?? 0) * 15 + (city.airbase ?? 0) * 5
+      );
     }
   }
 
@@ -765,7 +918,6 @@ function findNextDueCombatOrHealUtc(
 
   if (cs.diplomacy.relation === 'WAR' && allUnits.length >= 2) {
     const meleeSq = CAMPAIGN_MELEE_RANGE_DEG * CAMPAIGN_MELEE_RANGE_DEG;
-    const rangedSq = CAMPAIGN_RANGED_RANGE_DEG * CAMPAIGN_RANGED_RANGE_DEG;
     const posMap = new Map<string, CampaignGeoPoint>();
     for (const u of allUnits) {
       posMap.set(u.unitId, interpolateCampaignUnitPosition(u, atUtc));
@@ -774,6 +926,7 @@ function findNextDueCombatOrHealUtc(
     for (const u of allUnits) {
       const uPos = posMap.get(u.unitId)!;
       const spec = CAMPAIGN_UNIT_STATS[u.key];
+      const unitRangedSq = spec.rangedRangeDeg * spec.rangedRangeDeg;
       let hasHostileMelee = false;
       let hasHostileRanged = false;
 
@@ -784,7 +937,7 @@ function findNextDueCombatOrHealUtc(
           hasHostileMelee = true;
           break;
         }
-        if (spec.ranged && !u.trip && dSq <= rangedSq) {
+        if (spec.ranged && !u.trip && unitRangedSq > 0 && dSq <= unitRangedSq) {
           if (isTargetObservedByNation(cs, u.ownerNationId, posMap.get(other.unitId)!, atUtc)) {
             hasHostileRanged = true;
           }
@@ -805,6 +958,11 @@ function findNextDueCombatOrHealUtc(
     if (!city || city.ownerNationId !== u.ownerNationId || (city.hospital ?? 0) < 1) continue;
     const baseUtc = (u.lastHealUtc ?? cs.timeUtc) as number;
     consider(baseUtc + CAMPAIGN_HEAL_TICK_MS);
+  }
+
+  if (cs.aiControlledNationId && !cs.victory) {
+    const aiBase = (cs.aiLastDecisionUtc ?? cs.startUtc) as number;
+    consider(aiBase + CAMPAIGN_AI_DECISION_INTERVAL_MS);
   }
 
   return earliest;
@@ -844,6 +1002,293 @@ export function getEarliestCampaignDeadlineUtc(
   return earliest;
 }
 
+function cleanupSingletonStack(cs: MutableCampaignState, stackId: string | null): void {
+  if (!stackId) return;
+  const remaining = Object.values(cs.units).filter((u) => u.stackId === stackId);
+  if (remaining.length === 1) {
+    remaining[0].stackId = null;
+  }
+}
+
+function runCampaignAiStep(
+  cs: MutableCampaignState,
+  unitsRecord: Record<string, Unit>,
+  stepUtc: UtcEpochMs,
+  drafts: CampaignPendingEventDraft[]
+): void {
+  if (!cs.aiControlledNationId || cs.victory) return;
+  const aiNationId = cs.aiControlledNationId;
+  const nowNum = stepUtc as number;
+  const lastAiNum = (cs.aiLastDecisionUtc ?? cs.startUtc) as number;
+  if (lastAiNum + CAMPAIGN_AI_DECISION_INTERVAL_MS > nowNum) return;
+
+  cs.aiLastDecisionUtc = stepUtc;
+  const nation = cs.nations[aiNationId];
+  if (!nation) return;
+
+  const canAfford = (cost: CampaignResourceTuple): boolean => {
+    for (let i = 0; i < 7; i += 1) {
+      if (cost[i] * CAMPAIGN_HOUR_MS > nation.balance[i]) return false;
+    }
+    return true;
+  };
+  const deduct = (cost: CampaignResourceTuple): void => {
+    for (let i = 0; i < 7; i += 1) {
+      nation.balance[i] -= cost[i] * CAMPAIGN_HOUR_MS;
+    }
+  };
+
+  // 1. Deterministic Research Progression
+  if (!nation.study) {
+    const techOrder: CampaignDoctrineKey[] = [
+      'motor',
+      'recon',
+      'artillery',
+      'fighter',
+      'corvette',
+      'motor2',
+      'tank',
+    ];
+    for (const key of techOrder) {
+      if (nation.learned.includes(key)) continue;
+      const spec = CAMPAIGN_DOCTRINE_CATALOG[key];
+      if (spec.requires && !nation.learned.includes(spec.requires)) continue;
+      if (!canAfford(spec.cost)) continue;
+      deduct(spec.cost);
+      const endUtc = asUtcEpochMs(nowNum + spec.seconds * 1000);
+      nation.study = { key, startUtc: stepUtc, endUtc };
+      appendCampaignLog(cs.log, stepUtc, aiNationId, null, '', `Bắt đầu nghiên cứu ${spec.name}.`);
+      drafts.push({
+        occurredAtUtc: stepUtc,
+        tieBreakPriority: 21,
+        tieBreakKey: `${aiNationId}:ai_study:${key}`,
+        payload: {
+          type: 'CAMPAIGN_RESEARCH_STARTED',
+          nationId: aiNationId,
+          doctrineKey: key,
+          startUtc: stepUtc,
+          endUtc,
+        },
+      });
+      break;
+    }
+  }
+
+  const ownCities = Object.values(cs.cities).filter((c) => c.ownerNationId === aiNationId);
+  const enemyCities = Object.values(cs.cities).filter((c) => c.ownerNationId !== aiNationId);
+  if (ownCities.length === 0 || enemyCities.length === 0) return;
+
+  const distToClosestEnemyCity = (pt: CampaignGeoPoint): number => {
+    let best = Infinity;
+    for (const ec of enemyCities) {
+      const d = distSqDeg(pt, ec);
+      if (d < best) best = d;
+    }
+    return best;
+  };
+
+  const frontierCities = [...ownCities].sort(
+    (a, b) =>
+      distToClosestEnemyCity(a) - distToClosestEnemyCity(b) ||
+      (a.cityId < b.cityId ? -1 : 1)
+  );
+
+  // 2. Deterministic Frontier Infrastructure Build (max 1 queued per AI cycle)
+  const buildTargets = frontierCities.slice(0, 4);
+  let builtThisStep = false;
+  for (const city of buildTargets) {
+    if (builtThisStep) break;
+    if (city.jobs.some((j) => j.lane === 'build')) continue;
+    const plan: CampaignProjectKey[] = ['office', 'base', 'bunker', 'hospital', 'airbase'];
+    if (city.coastal) plan.push('port');
+    plan.push('factory');
+
+    for (const key of plan) {
+      const curLv = getBuildingLevel(city, key);
+      if (curLv >= 1) continue;
+      const terms = computeCampaignProjectTerms(city, key);
+      if (!canAfford(terms.cost)) continue;
+      deduct(terms.cost);
+      const endUtc = asUtcEpochMs(nowNum + terms.durationSeconds * 1000);
+      city.jobs.push({ key, lane: 'build', cost: terms.cost, startUtc: stepUtc, endUtc });
+      drafts.push({
+        occurredAtUtc: stepUtc,
+        tieBreakPriority: 22,
+        tieBreakKey: `${city.cityId}:ai_build:${key}`,
+        payload: {
+          type: 'CAMPAIGN_CITY_PROJECT_STARTED',
+          nationId: aiNationId,
+          cityId: city.cityId,
+          projectKey: key,
+          lane: 'build',
+          startUtc: stepUtc,
+          endUtc,
+        },
+      });
+      builtThisStep = true;
+      break;
+    }
+  }
+
+  // 3. Deterministic Mobilization in Frontier Cities (up to 8 active AI units)
+  const aiUnits = Object.values(cs.units).filter((u) => u.ownerNationId === aiNationId);
+  const aiMobilizingCount = ownCities.filter((c) => c.jobs.some((j) => j.lane === 'mobilize')).length;
+  if (aiUnits.length + aiMobilizingCount < 8) {
+    const unitCandidates: CampaignUnitKey[] = [
+      'motor',
+      'artillery',
+      'fighter',
+      'corvette',
+      'recon',
+      'tank',
+      'reserve',
+    ];
+    let mobilizedThisStep = false;
+    for (const city of buildTargets) {
+      if (mobilizedThisStep) break;
+      if (city.office < 1 || city.jobs.some((j) => j.lane === 'mobilize')) continue;
+      for (const uKey of unitCandidates) {
+        const spec = CAMPAIGN_UNIT_STATS[uKey];
+        if (spec.requiredDoctrine && !nation.learned.includes(spec.requiredDoctrine)) continue;
+        if (city.office < spec.requiredOffice) continue;
+        if ((city.base ?? 0) < spec.requiredBase) continue;
+        if ((city.airbase ?? 0) < spec.requiredAirbase) continue;
+        if ((city.port ?? 0) < spec.requiredPort) continue;
+        const terms = computeCampaignProjectTerms(city, uKey);
+        if (!canAfford(terms.cost)) continue;
+        deduct(terms.cost);
+        const endUtc = asUtcEpochMs(nowNum + terms.durationSeconds * 1000);
+        city.jobs.push({ key: uKey, lane: 'mobilize', cost: terms.cost, startUtc: stepUtc, endUtc });
+        drafts.push({
+          occurredAtUtc: stepUtc,
+          tieBreakPriority: 23,
+          tieBreakKey: `${city.cityId}:ai_mob:${uKey}`,
+          payload: {
+            type: 'CAMPAIGN_CITY_PROJECT_STARTED',
+            nationId: aiNationId,
+            cityId: city.cityId,
+            projectKey: uKey,
+            lane: 'mobilize',
+            startUtc: stepUtc,
+            endUtc,
+          },
+        });
+        mobilizedThisStep = true;
+        break;
+      }
+    }
+  }
+
+  // 4. Diplomacy: Declare WAR once AI has >= 2 active units ready
+  const otherNationId = Object.keys(cs.nations).find((id) => id !== aiNationId) as NationId | undefined;
+  if (cs.diplomacy.relation === 'PEACE' && aiUnits.length >= 2 && otherNationId) {
+    cs.diplomacy.relation = 'WAR';
+    cs.diplomacy.peaceProposedByNationId = null;
+    cs.diplomacy.intelProposedByNationId = null;
+    cs.diplomacy.sharedIntelActive = false;
+    cs.diplomacy.updatedAtUtc = stepUtc;
+    appendCampaignNews(
+      cs,
+      stepUtc,
+      'DIPLOMACY',
+      `${nationLabelVi(aiNationId)} (AI) tuyên chiến với ${nationLabelVi(otherNationId)}!`,
+      `Bộ Tư Lệnh Máy đã phát động chiến dịch tiến công dọc tuyến giới tuyến.`
+    );
+    drafts.push({
+      occurredAtUtc: stepUtc,
+      tieBreakPriority: 24,
+      tieBreakKey: `${aiNationId}:ai_war`,
+      payload: {
+        type: 'CAMPAIGN_DIPLOMACY_CHANGED',
+        actorNationId: aiNationId,
+        targetNationId: otherNationId,
+        action: 'DECLARE_WAR',
+        relation: 'WAR',
+        sharedIntelActive: false,
+      },
+    });
+  }
+
+  // 5. Tactical Movement Orders when at WAR
+  if (cs.diplomacy.relation !== 'WAR') return;
+  const hospitalCity = ownCities
+    .filter((c) => (c.hospital ?? 0) >= 1)
+    .sort((a, b) => (a.cityId < b.cityId ? -1 : 1))[0];
+  const sortedAiUnits = [...aiUnits].sort((a, b) => (a.unitId < b.unitId ? -1 : 1));
+
+  for (const unit of sortedAiUnits) {
+    if (unit.trip || unit.inCombat) continue;
+    const spec = CAMPAIGN_UNIT_STATS[unit.key];
+
+    let targetCity: CampaignCityState | null = null;
+    if (unit.hp * 10 < unit.maxHp * 4 && hospitalCity && unit.cityId !== hospitalCity.cityId) {
+      // Retreat severely wounded unit to military hospital
+      if (spec.domain !== 'NAVAL' || hospitalCity.coastal) {
+        targetCity = hospitalCity;
+      }
+    } else if (spec.canConquer) {
+      // Infantry assaults closest enemy city
+      const sortedEnemy = [...enemyCities].sort(
+        (a, b) => distSqDeg(unit.position, a) - distSqDeg(unit.position, b) || (a.cityId < b.cityId ? -1 : 1)
+      );
+      targetCity = sortedEnemy[0] ?? null;
+    } else if (spec.ranged) {
+      // Ranged artillery / fighter / corvette positions at closest owned frontier city (coastal if naval)
+      const candidates = frontierCities.filter((c) => spec.domain !== 'NAVAL' || c.coastal);
+      const bestPost = candidates[0];
+      if (bestPost && unit.cityId !== bestPost.cityId) {
+        targetCity = bestPost;
+      }
+    } else {
+      // Armor/recon supports closest enemy city
+      const sortedEnemy = [...enemyCities].sort(
+        (a, b) => distSqDeg(unit.position, a) - distSqDeg(unit.position, b) || (a.cityId < b.cityId ? -1 : 1)
+      );
+      targetCity = sortedEnemy[0] ?? null;
+    }
+
+    if (!targetCity || unit.cityId === targetCity.cityId) continue;
+    if (spec.domain === 'NAVAL' && !targetCity.coastal) continue;
+
+    if (unit.cityId && unit.key === 'reserve') {
+      const orig = cs.cities[unit.cityId];
+      if (orig && orig.reserve > 0) orig.reserve -= 1;
+    }
+    const durationSeconds =
+      unit.key === 'motor' && nation.learned.includes('motor2')
+        ? CAMPAIGN_MOVE_DURATION_SECONDS.motorUpgraded
+        : spec.moveSeconds;
+    const durationMs = durationSeconds * 1000;
+    const endUtc = asUtcEpochMs(nowNum + durationMs);
+    const points = buildCampaignPath(cs.cities, unit.position, targetCity, spec.domain);
+    unit.cityId = null;
+    unit.cityName = null;
+    unit.rev += 1;
+    unit.trip = {
+      toCityId: targetCity.cityId,
+      toCityName: targetCity.name,
+      points,
+      startUtc: stepUtc,
+      endUtc,
+    };
+    mirrorUnitRecord(unitsRecord, unit, targetCity.cityId);
+    drafts.push({
+      occurredAtUtc: stepUtc,
+      tieBreakPriority: 25,
+      tieBreakKey: `${unit.unitId}:ai_move`,
+      payload: {
+        type: 'CAMPAIGN_UNIT_ORDER_ISSUED',
+        nationId: aiNationId,
+        unitId: unit.unitId,
+        toCityId: targetCity.cityId,
+        startUtc: stepUtc,
+        endUtc,
+        durationMs,
+      },
+    });
+  }
+}
+
 function resolveCombatAtStep(
   cs: MutableCampaignState,
   unitsRecord: Record<string, Unit>,
@@ -859,7 +1304,6 @@ function resolveCombatAtStep(
 
   const nowNum = stepUtc as number;
   const meleeSq = CAMPAIGN_MELEE_RANGE_DEG * CAMPAIGN_MELEE_RANGE_DEG;
-  const rangedSq = CAMPAIGN_RANGED_RANGE_DEG * CAMPAIGN_RANGED_RANGE_DEG;
 
   const sortedUnits = Object.values(cs.units).sort((a, b) =>
     a.unitId < b.unitId ? -1 : a.unitId > b.unitId ? 1 : 0
@@ -963,6 +1407,7 @@ function resolveCombatAtStep(
       victim.hp = Math.max(0, victim.hp - dmg);
       victim.lastHealUtc = stepUtc;
       if (victim.hp <= 0) {
+        const oldVictimStack = victim.stackId;
         destroyedUnitIds.push(victim.unitId);
         if (victim.cityId && victim.key === 'reserve') {
           const c = cs.cities[victim.cityId];
@@ -976,6 +1421,7 @@ function resolveCombatAtStep(
         }
         delete cs.units[victimId];
         delete unitsRecord[victimId];
+        cleanupSingletonStack(cs, oldVictimStack);
       } else {
         mirrorUnitRecord(
           unitsRecord,
@@ -1051,14 +1497,14 @@ function resolveCombatAtStep(
     }
   }
 
-  // 3. Resolve ready ranged artillery bombardments (no melee counter-damage!)
+  // 3. Resolve ready ranged bombardments (artillery/naval = 0 counter-damage; fighter airstrike = 25% AA flak)
   const livingSorted = Object.values(cs.units).sort((a, b) =>
     a.unitId < b.unitId ? -1 : a.unitId > b.unitId ? 1 : 0
   );
   for (const arty of livingSorted) {
     if (!cs.units[arty.unitId]) continue;
     const spec = CAMPAIGN_UNIT_STATS[arty.key];
-    if (!spec.ranged || arty.trip || arty.inCombat) continue;
+    if (!spec.ranged || arty.trip || arty.inCombat || spec.rangedRangeDeg <= 0) continue;
     if (
       arty.lastCombatUtc !== null &&
       (arty.lastCombatUtc as number) + CAMPAIGN_COMBAT_TICK_MS > nowNum
@@ -1066,13 +1512,14 @@ function resolveCombatAtStep(
       continue;
     }
 
+    const unitRangedSq = spec.rangedRangeDeg * spec.rangedRangeDeg;
     const artyPos = interpolateCampaignUnitPosition(arty, nowNum);
     const candidates = Object.values(cs.units)
       .filter((other) => {
         if (other.ownerNationId === arty.ownerNationId) return false;
         const otherPos = interpolateCampaignUnitPosition(other, nowNum);
         const dSq = distSqDeg(artyPos, otherPos);
-        if (dSq > rangedSq) return false;
+        if (dSq > unitRangedSq) return false;
         return isTargetObservedByNation(cs, arty.ownerNationId, otherPos, nowNum);
       })
       .map((other) => ({
@@ -1085,14 +1532,23 @@ function resolveCombatAtStep(
     if (!chosen) continue;
 
     const dmg = computeUnitAttackDamage(cs, arty, chosen, false);
+    const isAirStrike = spec.domain === 'AIR';
+    const flakDmg = isAirStrike
+      ? Math.max(1, Math.floor(computeUnitAttackDamage(cs, chosen, arty, true) / 4))
+      : 0;
     arty.lastCombatUtc = stepUtc;
     chosen.hp = Math.max(0, chosen.hp - dmg);
     chosen.lastHealUtc = stepUtc;
+    if (flakDmg > 0) {
+      arty.hp = Math.max(0, arty.hp - flakDmg);
+      arty.lastHealUtc = stepUtc;
+    }
     const targetPos = interpolateCampaignUnitPosition(chosen, nowNum);
     const locationName = chosen.cityName ?? nearestCityName(cs, targetPos);
     const destroyedUnitIds: UnitId[] = [];
 
     if (chosen.hp <= 0) {
+      const oldStack = chosen.stackId;
       destroyedUnitIds.push(chosen.unitId);
       if (chosen.cityId && chosen.key === 'reserve') {
         const c = cs.cities[chosen.cityId];
@@ -1102,6 +1558,7 @@ function resolveCombatAtStep(
       cs.nations[arty.ownerNationId].stats.enemyUnitsDestroyed += 1;
       delete cs.units[chosen.unitId];
       delete unitsRecord[chosen.unitId];
+      cleanupSingletonStack(cs, oldStack);
     } else {
       mirrorUnitRecord(
         unitsRecord,
@@ -1110,23 +1567,47 @@ function resolveCombatAtStep(
       );
     }
 
+    if (flakDmg > 0 && arty.hp <= 0) {
+      const oldArtyStack = arty.stackId;
+      destroyedUnitIds.push(arty.unitId);
+      cs.nations[arty.ownerNationId].stats.unitsLost += 1;
+      cs.nations[chosen.ownerNationId].stats.enemyUnitsDestroyed += 1;
+      delete cs.units[arty.unitId];
+      delete unitsRecord[arty.unitId];
+      cleanupSingletonStack(cs, oldArtyStack);
+    } else if (flakDmg > 0) {
+      mirrorUnitRecord(
+        unitsRecord,
+        arty,
+        arty.cityId ?? Object.values(cs.cities)[0].cityId
+      );
+    }
+
+    destroyedUnitIds.sort();
     const reportId = `bat_${String(cs.nextReportNumber).padStart(4, '0')}`;
     cs.nextReportNumber += 1;
+    const strikeLabel = isAirStrike
+      ? 'Không kích'
+      : spec.domain === 'NAVAL'
+        ? 'Hải pháo'
+        : 'Pháo kích';
+    const reportKind: 'BOMBARDMENT' | 'AIRSTRIKE' = isAirStrike ? 'AIRSTRIKE' : 'BOMBARDMENT';
     const summary =
-      `Pháo kích từ ${nationLabelVi(arty.ownerNationId)} (#${arty.displayNumber}) vào ${locationName} gây ${dmg} ST` +
-      (destroyedUnitIds.length ? ` · Tiêu diệt đơn vị #${chosen.displayNumber}.` : '.');
+      `${strikeLabel} từ ${nationLabelVi(arty.ownerNationId)} (#${arty.displayNumber}) vào ${locationName} gây ${dmg} ST` +
+      (flakDmg > 0 ? ` (phòng không đáp trả ${flakDmg} ST)` : '') +
+      (destroyedUnitIds.length ? ` · Tiêu diệt ${destroyedUnitIds.length} đơn vị.` : '.');
 
     cs.battleReports.unshift({
       reportId,
       occurredAtUtc: stepUtc,
-      kind: 'BOMBARDMENT',
+      kind: reportKind,
       locationName,
       attackerNationId: arty.ownerNationId,
       defenderNationId: chosen.ownerNationId,
       attackerUnitIds: [arty.unitId],
       defenderUnitIds: [chosen.unitId],
       damageToDefenders: dmg,
-      damageToAttackers: 0,
+      damageToAttackers: flakDmg,
       destroyedUnitIds,
       summary,
     });
@@ -1135,7 +1616,7 @@ function resolveCombatAtStep(
     }
 
     if (destroyedUnitIds.length > 0) {
-      appendCampaignNews(cs, stepUtc, 'COMBAT', `Pháo kích tại ${locationName}`, summary);
+      appendCampaignNews(cs, stepUtc, 'COMBAT', `${strikeLabel} tại ${locationName}`, summary);
     }
 
     drafts.push({
@@ -1145,12 +1626,12 @@ function resolveCombatAtStep(
       payload: {
         type: 'CAMPAIGN_COMBAT_RESOLVED',
         reportId,
-        kind: 'BOMBARDMENT',
+        kind: reportKind,
         locationName,
         attackerNationId: arty.ownerNationId,
         defenderNationId: chosen.ownerNationId,
         damageToDefenders: dmg,
-        damageToAttackers: 0,
+        damageToAttackers: flakDmg,
         destroyedUnitIds,
       },
     });
@@ -1462,6 +1943,7 @@ function settleCampaignInPlace(
             inCombat: false,
             lastCombatUtc: null,
             lastHealUtc: job.endUtc,
+            stackId: null,
           };
           cs.units[unitId] = newUnit;
           mirrorUnitRecord(unitsRecord, newUnit, city.cityId);
@@ -1513,6 +1995,12 @@ function settleCampaignInPlace(
                 u.lastHealUtc = job.endUtc;
               }
             }
+          } else if (job.key === 'airbase') {
+            city.airbase = (city.airbase ?? 0) + 1;
+            newLevel = city.airbase;
+          } else if (job.key === 'port') {
+            city.port = (city.port ?? 0) + 1;
+            newLevel = city.port;
           }
           appendCampaignLog(
             cs.log,
@@ -1594,9 +2082,10 @@ function settleCampaignInPlace(
     // 5. Resolve conquest & victory
     resolveConquestAndVictoryAtStep(cs, unitsRecord, regionsRecord, nationsMeta, stepUtc, drafts);
 
-    // 6. Hospital healing
+    // 6. Hospital healing & Deterministic AI Commander step
     if (!cs.victory) {
       resolveHospitalHealingAtStep(cs, unitsRecord, stepUtc);
+      runCampaignAiStep(cs, unitsRecord, stepUtc, drafts);
     }
 
     // Prevent zero-time spin if nothing changed at stepUtc
@@ -1816,6 +2305,13 @@ export function applyCampaignStartCityProject(options: {
   }
 
   if (spec.lane === 'build' && spec.maxLevel !== undefined) {
+    if (options.projectKey === 'port' && !city.coastal) {
+      return {
+        ok: false,
+        code: 'INVALID_TARGET',
+        reason: `Quân cảng chỉ xây được tại thành phố ven biển (${city.name} ở nội địa).`,
+      };
+    }
     const curLv = getBuildingLevel(city, options.projectKey);
     if (curLv >= spec.maxLevel) {
       return {
@@ -1847,6 +2343,20 @@ export function applyCampaignStartCityProject(options: {
         ok: false,
         code: 'INVALID_TARGET',
         reason: `Cần Căn cứ lục quân cấp ${unitSpec.requiredBase} tại ${city.name}.`,
+      };
+    }
+    if ((city.airbase ?? 0) < unitSpec.requiredAirbase) {
+      return {
+        ok: false,
+        code: 'INVALID_TARGET',
+        reason: `Cần Căn cứ không quân cấp ${unitSpec.requiredAirbase} tại ${city.name}.`,
+      };
+    }
+    if ((city.port ?? 0) < unitSpec.requiredPort) {
+      return {
+        ok: false,
+        code: 'INVALID_TARGET',
+        reason: `Cần Quân cảng cấp ${unitSpec.requiredPort} tại ${city.name}.`,
       };
     }
   }
@@ -2071,14 +2581,26 @@ export function applyCampaignMoveUnit(options: {
   }
 
   const spec = CAMPAIGN_UNIT_STATS[unit.key];
+  if (spec.domain === 'NAVAL' && !destCity.coastal) {
+    return {
+      ok: false,
+      code: 'INVALID_TARGET',
+      reason: `Tàu chiến chỉ có thể cơ động tới thành phố ven biển (${destCity.name} ở nội địa).`,
+    };
+  }
   const durationSeconds =
     unit.key === 'motor' && nation.learned.includes('motor2')
       ? CAMPAIGN_MOVE_DURATION_SECONDS.motorUpgraded
       : spec.moveSeconds;
   const durationMs = durationSeconds * 1000;
   const endUtc = asUtcEpochMs((options.nowUtc as number) + durationMs);
-  const points = buildCampaignPath(cs.cities, currentPos, destCity);
+  const points = buildCampaignPath(cs.cities, currentPos, destCity, spec.domain);
 
+  if (unit.stackId) {
+    const prevStack = unit.stackId;
+    unit.stackId = null;
+    cleanupSingletonStack(cs, prevStack);
+  }
   unit.position = currentPos;
   unit.cityId = null;
   unit.cityName = null;
@@ -2277,5 +2799,287 @@ export function applyCampaignSetDiplomacy(options: {
     resolveConquestAndVictoryAtStep(cs, nextUnits, nextRegions, options.nationsMeta, options.nowUtc, drafts);
   }
 
+  return { ok: true, campaignState: cs, units: nextUnits, regions: nextRegions, drafts };
+}
+
+export function applyCampaignGroupUnits(options: {
+  readonly state: CampaignMatchState;
+  readonly unitsRecord: Readonly<Record<string, Unit>>;
+  readonly regionsRecord: Readonly<Record<string, Region>>;
+  readonly nationsMeta: Readonly<Record<string, Nation>>;
+  readonly nationId: NationId;
+  readonly action: 'MERGE' | 'SPLIT' | 'MOVE_STACK';
+  readonly unitIds?: readonly UnitId[];
+  readonly stackId?: string;
+  readonly toCityId?: RegionId | null;
+  readonly nowUtc: UtcEpochMs;
+}): CampaignMutationResult {
+  const cs = cloneCampaignState(options.state);
+  const nextUnits = { ...options.unitsRecord };
+  const nextRegions = { ...options.regionsRecord };
+  const drafts: CampaignPendingEventDraft[] = [];
+  settleCampaignInPlace(cs, nextUnits, nextRegions, options.nationsMeta, options.nowUtc, drafts);
+
+  if (cs.victory) {
+    return { ok: false, code: 'FORBIDDEN_ACTION', reason: 'Trận chiến dịch đã kết thúc.' };
+  }
+  const nation = cs.nations[options.nationId];
+  if (!nation) {
+    return { ok: false, code: 'INVALID_TARGET', reason: 'Quốc gia không tồn tại.' };
+  }
+
+  if (options.action === 'MERGE') {
+    const uniqueIds = Array.from(new Set(options.unitIds ?? [])).sort();
+    if (uniqueIds.length < 2) {
+      return { ok: false, code: 'INVALID_TARGET', reason: 'Cần chọn ít nhất 2 đơn vị để gộp đạo quân.' };
+    }
+    const members: CampaignUnitState[] = [];
+    for (const id of uniqueIds) {
+      const u = cs.units[id];
+      if (!u) return { ok: false, code: 'INVALID_TARGET', reason: `Đơn vị ${id} không tồn tại.` };
+      if (u.ownerNationId !== options.nationId) {
+        return { ok: false, code: 'FORBIDDEN_ACTION', reason: 'Không thể gộp đơn vị của đối phương.' };
+      }
+      if (u.trip) {
+        return { ok: false, code: 'INVALID_TARGET', reason: 'Chỉ gộp được các đơn vị đang dừng tại cùng vị trí.' };
+      }
+      members.push(u);
+    }
+    const anchor = members[0];
+    const meleeSq = CAMPAIGN_MELEE_RANGE_DEG * CAMPAIGN_MELEE_RANGE_DEG;
+    for (const m of members.slice(1)) {
+      const sameCity = Boolean(anchor.cityId && anchor.cityId === m.cityId);
+      const closeEnough = distSqDeg(anchor.position, m.position) <= meleeSq;
+      if (!sameCity && !closeEnough) {
+        return { ok: false, code: 'INVALID_TARGET', reason: 'Các đơn vị phải đóng tại cùng thành phố hoặc vị trí mới gộp được.' };
+      }
+    }
+    const oldStacks = new Set<string>();
+    for (const m of members) {
+      if (m.stackId) oldStacks.add(m.stackId);
+    }
+    const stackId = `stk_${String(cs.nextReportNumber).padStart(4, '0')}`;
+    cs.nextReportNumber += 1;
+    for (const m of members) {
+      m.stackId = stackId;
+      m.rev += 1;
+    }
+    for (const old of oldStacks) cleanupSingletonStack(cs, old);
+
+    appendCampaignLog(
+      cs.log,
+      options.nowUtc,
+      options.nationId,
+      anchor.cityId,
+      anchor.cityName ?? '',
+      `Đã gộp ${members.length} đơn vị thành đạo quân hợp thành (${stackId}).`
+    );
+    drafts.push({
+      occurredAtUtc: options.nowUtc,
+      tieBreakPriority: 37,
+      tieBreakKey: stackId,
+      payload: {
+        type: 'CAMPAIGN_UNITS_GROUPED',
+        nationId: options.nationId,
+        action: 'MERGE',
+        stackId,
+        unitIds: uniqueIds,
+      },
+    });
+    return { ok: true, campaignState: cs, units: nextUnits, regions: nextRegions, drafts };
+  }
+
+  if (options.action === 'SPLIT') {
+    const uniqueIds = Array.from(new Set(options.unitIds ?? [])).sort();
+    if (uniqueIds.length < 1) {
+      return { ok: false, code: 'INVALID_TARGET', reason: 'Cần chọn ít nhất 1 đơn vị để tách khỏi đạo quân.' };
+    }
+    const touchedStacks = new Set<string>();
+    for (const id of uniqueIds) {
+      const u = cs.units[id];
+      if (!u) return { ok: false, code: 'INVALID_TARGET', reason: `Đơn vị ${id} không tồn tại.` };
+      if (u.ownerNationId !== options.nationId) {
+        return { ok: false, code: 'FORBIDDEN_ACTION', reason: 'Không thể tách đơn vị của đối phương.' };
+      }
+      if (!u.stackId) {
+        return { ok: false, code: 'INVALID_TARGET', reason: 'Đơn vị này hiện không nằm trong đạo quân gộp.' };
+      }
+      touchedStacks.add(u.stackId);
+      u.stackId = null;
+      u.rev += 1;
+    }
+    for (const old of touchedStacks) cleanupSingletonStack(cs, old);
+
+    appendCampaignLog(
+      cs.log,
+      options.nowUtc,
+      options.nationId,
+      null,
+      '',
+      `Đã tách ${uniqueIds.length} đơn vị khỏi đạo quân hợp thành.`
+    );
+    drafts.push({
+      occurredAtUtc: options.nowUtc,
+      tieBreakPriority: 37,
+      tieBreakKey: uniqueIds[0],
+      payload: {
+        type: 'CAMPAIGN_UNITS_GROUPED',
+        nationId: options.nationId,
+        action: 'SPLIT',
+        stackId: null,
+        unitIds: uniqueIds,
+      },
+    });
+    return { ok: true, campaignState: cs, units: nextUnits, regions: nextRegions, drafts };
+  }
+
+  // MOVE_STACK
+  const stackId = options.stackId;
+  if (!stackId) {
+    return { ok: false, code: 'INVALID_TARGET', reason: 'Thiếu mã đạo quân cần điều động.' };
+  }
+  const members = Object.values(cs.units)
+    .filter((u) => u.stackId === stackId && u.ownerNationId === options.nationId)
+    .sort((a, b) => (a.unitId < b.unitId ? -1 : 1));
+  if (members.length === 0) {
+    return { ok: false, code: 'INVALID_TARGET', reason: 'Không tìm thấy đạo quân hợp thành thuộc quyền bạn.' };
+  }
+
+  const memberIds = members.map((m) => m.unitId);
+  if (options.toCityId === null || options.toCityId === undefined) {
+    const anyMoving = members.some((m) => m.trip !== null);
+    if (!anyMoving) {
+      return { ok: false, code: 'INVALID_TARGET', reason: 'Đạo quân hiện đã dừng.' };
+    }
+    for (const m of members) {
+      m.position = interpolateCampaignUnitPosition(m, options.nowUtc as number);
+      m.cityId = null;
+      m.cityName = null;
+      m.trip = null;
+      m.rev += 1;
+      drafts.push({
+        occurredAtUtc: options.nowUtc,
+        tieBreakPriority: 35,
+        tieBreakKey: m.unitId,
+        payload: {
+          type: 'CAMPAIGN_UNIT_ORDER_ISSUED',
+          nationId: options.nationId,
+          unitId: m.unitId,
+          toCityId: null,
+          startUtc: options.nowUtc,
+          endUtc: null,
+          durationMs: 0,
+        },
+      });
+    }
+    appendCampaignLog(cs.log, options.nowUtc, options.nationId, null, '', `Đạo quân (${members.length} đơn vị) đã dừng tại chỗ.`);
+    drafts.push({
+      occurredAtUtc: options.nowUtc,
+      tieBreakPriority: 37,
+      tieBreakKey: stackId,
+      payload: {
+        type: 'CAMPAIGN_UNITS_GROUPED',
+        nationId: options.nationId,
+        action: 'MOVE_STACK',
+        stackId,
+        unitIds: memberIds,
+      },
+    });
+    return { ok: true, campaignState: cs, units: nextUnits, regions: nextRegions, drafts };
+  }
+
+  const destCity = cs.cities[options.toCityId];
+  if (!destCity) {
+    return { ok: false, code: 'INVALID_TARGET', reason: 'Thành phố đích không hợp lệ.' };
+  }
+  const isHostile = destCity.ownerNationId !== options.nationId;
+  if (isHostile && cs.diplomacy.relation !== 'WAR') {
+    return {
+      ok: false,
+      code: 'FORBIDDEN_ACTION',
+      reason: `Cần tuyên chiến trong mục Ngoại giao trước khi tiến quân vào ${destCity.name}.`,
+    };
+  }
+  const hasNaval = members.some((m) => CAMPAIGN_UNIT_STATS[m.key].domain === 'NAVAL');
+  if (hasNaval && !destCity.coastal) {
+    return {
+      ok: false,
+      code: 'INVALID_TARGET',
+      reason: `Đạo quân có tàu chiến nên chỉ có thể tới thành phố ven biển (${destCity.name} ở nội địa).`,
+    };
+  }
+  if (members.every((m) => m.cityId === destCity.cityId || m.trip?.toCityId === destCity.cityId)) {
+    return { ok: false, code: 'INVALID_TARGET', reason: 'Đạo quân đã ở hoặc đang hướng tới thành phố này.' };
+  }
+
+  // Synchronized Supremacy WW3 stack march: entire stack moves at slowest member speed!
+  const slowestSeconds = Math.max(
+    ...members.map((m) =>
+      m.key === 'motor' && nation.learned.includes('motor2')
+        ? CAMPAIGN_MOVE_DURATION_SECONDS.motorUpgraded
+        : CAMPAIGN_UNIT_STATS[m.key].moveSeconds
+    )
+  );
+  const allAir = members.every((m) => CAMPAIGN_UNIT_STATS[m.key].domain === 'AIR');
+  const allNaval = members.every((m) => CAMPAIGN_UNIT_STATS[m.key].domain === 'NAVAL');
+  const stackDomain: 'LAND' | 'AIR' | 'NAVAL' = allAir ? 'AIR' : allNaval ? 'NAVAL' : 'LAND';
+  const durationMs = slowestSeconds * 1000;
+  const endUtc = asUtcEpochMs((options.nowUtc as number) + durationMs);
+  const anchorPos = interpolateCampaignUnitPosition(members[0], options.nowUtc as number);
+  const points = buildCampaignPath(cs.cities, anchorPos, destCity, stackDomain);
+
+  for (const m of members) {
+    if (m.cityId && m.key === 'reserve') {
+      const originCity = cs.cities[m.cityId];
+      if (originCity && originCity.reserve > 0) originCity.reserve -= 1;
+    }
+    m.position = { ...anchorPos };
+    m.cityId = null;
+    m.cityName = null;
+    m.inCombat = false;
+    m.rev += 1;
+    m.trip = {
+      toCityId: destCity.cityId,
+      toCityName: destCity.name,
+      points: points.map((pt) => ({ ...pt })),
+      startUtc: options.nowUtc,
+      endUtc,
+    };
+    drafts.push({
+      occurredAtUtc: options.nowUtc,
+      tieBreakPriority: 35,
+      tieBreakKey: m.unitId,
+      payload: {
+        type: 'CAMPAIGN_UNIT_ORDER_ISSUED',
+        nationId: options.nationId,
+        unitId: m.unitId,
+        toCityId: destCity.cityId,
+        startUtc: options.nowUtc,
+        endUtc,
+        durationMs,
+      },
+    });
+  }
+
+  appendCampaignLog(
+    cs.log,
+    options.nowUtc,
+    options.nationId,
+    null,
+    '',
+    `Đạo quân hợp thành (${members.length} đơn vị) ${isHostile ? 'tiến công' : 'hành quân'} tới ${destCity.name} (${slowestSeconds}s).`
+  );
+  drafts.push({
+    occurredAtUtc: options.nowUtc,
+    tieBreakPriority: 37,
+    tieBreakKey: stackId,
+    payload: {
+      type: 'CAMPAIGN_UNITS_GROUPED',
+      nationId: options.nationId,
+      action: 'MOVE_STACK',
+      stackId,
+      unitIds: memberIds,
+    },
+  });
   return { ok: true, campaignState: cs, units: nextUnits, regions: nextRegions, drafts };
 }

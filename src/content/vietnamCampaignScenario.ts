@@ -28,6 +28,36 @@ import rawCities from './geo/vietnamCampaignCities.json';
 
 export const VIETNAM_CAMPAIGN_SCENARIO_ID: ScenarioId = 'vietnam_campaign_v1';
 
+/** Canonical coastal / sea-access Vietnamese cities allowed to build Naval Ports & deploy Corvettes. */
+export const VIETNAM_COASTAL_CITY_NAMES: ReadonlySet<string> = new Set([
+  'Hải Phòng',
+  'Hòn Gai',
+  'Cẩm Phả',
+  'Nam Định',
+  'Thái Bình',
+  'Thanh Hóa',
+  'Vinh',
+  'Hà Tĩnh',
+  'Đồng Hới',
+  'Huế',
+  'Đà Nẵng',
+  'Quảng Ngãi',
+  'Quy Nhơn',
+  'Tuy Hòa',
+  'Nha Trang',
+  'Phan Rang',
+  'Phan Thiết',
+  'Vũng Tàu',
+  'TP. Hồ Chí Minh',
+  'Mỹ Tho',
+  'Trúc Giang',
+  'Trà Vinh',
+  'Sóc Trăng',
+  'Bạc Liêu',
+  'Cà Mau',
+  'Rạch Giá',
+]);
+
 export interface VietnamCampaignCityBlueprint {
   readonly cityId: RegionId;
   readonly index: number;
@@ -106,6 +136,7 @@ export function createVietnamCampaignMatchState(options: {
   seed: number;
   createdAtUtc: number;
   mode: MatchMode;
+  aiControlledNationId?: NationId | null;
 }): MatchState {
   const matchId = MatchIdSchema.parse(options.matchId);
   const createdAtUtc = asUtcEpochMs(options.createdAtUtc);
@@ -159,6 +190,7 @@ export function createVietnamCampaignMatchState(options: {
       lon: bp.lon,
       lat: bp.lat,
       capital: bp.capital || bp.name === 'TP. Hồ Chí Minh',
+      coastal: VIETNAM_COASTAL_CITY_NAMES.has(bp.name),
       rank: bp.rank,
       material: bp.material,
       ownerNationId,
@@ -167,6 +199,8 @@ export function createVietnamCampaignMatchState(options: {
       base: 0,
       bunker: 0,
       hospital: 0,
+      airbase: 0,
+      port: 0,
       reserve: 0,
       jobs: [],
     };
@@ -195,6 +229,8 @@ export function createVietnamCampaignMatchState(options: {
       updatedAtUtc: createdAtUtc,
     },
     victory: null,
+    aiControlledNationId: options.aiControlledNationId ?? null,
+    aiLastDecisionUtc: null,
     nations: {
       [WORLD_NATIONS.north]: {
         nationId: WORLD_NATIONS.north,

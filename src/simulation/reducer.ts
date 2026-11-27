@@ -49,6 +49,7 @@ import {
 import {
   applyCampaignCancelCityProject,
   applyCampaignCancelResearch,
+  applyCampaignGroupUnits,
   applyCampaignMoveUnit,
   applyCampaignSetDiplomacy,
   applyCampaignStartCityProject,
@@ -1902,6 +1903,39 @@ export function reduceCommand(
         nationId: payload.nationId,
         targetNationId: payload.targetNationId,
         action: payload.action,
+        nowUtc,
+      });
+      if (!outcome.ok) {
+        return reject(state, outcome.code, outcome.reason);
+      }
+      campaignState = outcome.campaignState;
+      units = outcome.units;
+      regions = outcome.regions;
+      for (const ev of outcome.drafts) drafts.push(ev);
+      break;
+    }
+
+    case 'CAMPAIGN_GROUP_UNITS': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(
+          state,
+          'FORBIDDEN_ACTION',
+          `Actor "${actor.actorId}" cannot group units for "${payload.nationId}".`
+        );
+      }
+      if (!campaignState) {
+        return reject(state, 'INVALID_TARGET', 'Phòng đấu này không thuộc kịch bản chiến dịch Việt Nam.');
+      }
+      const outcome = applyCampaignGroupUnits({
+        state: campaignState,
+        unitsRecord: units,
+        regionsRecord: regions,
+        nationsMeta: nations,
+        nationId: payload.nationId,
+        action: payload.action,
+        unitIds: payload.unitIds,
+        stackId: payload.stackId,
+        toCityId: payload.toCityId,
         nowUtc,
       });
       if (!outcome.ok) {

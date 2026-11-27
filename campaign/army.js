@@ -120,6 +120,22 @@ function cancelDestination() {
   renderArmy();
   invalidate();
 }
+function stackMembersOf(unit) {
+  if (!unit?.stackId || !live?.units) return [];
+  return live.units.filter(
+    (u) => u.stackId === unit.stackId && u.owned !== false,
+  );
+}
+function mergeableAlliesOf(unit) {
+  if (!unit || unit.owned === false || unit.trip || !live?.units) return [];
+  return live.units.filter((u) => {
+    if (u.owned === false || u.trip) return false;
+    if (unit.city && u.city === unit.city) return true;
+    const dx = (u.position?.lon ?? 0) - (unit.position?.lon ?? 0);
+    const dy = (u.position?.lat ?? 0) - (unit.position?.lat ?? 0);
+    return dx * dx + dy * dy <= 0.09 * 0.09;
+  });
+}
 async function sendMove(to) {
   const u = live.units.find((u) => u.id === activeUnit);
   if (!u) return;
@@ -128,14 +144,39 @@ async function sendMove(to) {
     cancelDestination();
     return;
   }
+  const members = stackMembersOf(u);
+  if (members.length >= 2) {
+    if (typeof isOnline === "function" && isOnline()) {
+      const ok = await sendOnlineGroupUnits("MOVE_STACK", {
+        stackId: u.stackId,
+        toCityName: to,
+      });
+      if (ok) cancelDestination();
+      return;
+    }
+    const ok = await commitOrder((s) =>
+      groupUnitsOrder(s, "MOVE_STACK", [], u.stackId, to),
+    );
+    if (ok) {
+      if (typeof sfx !== "undefined") sfx.play("move");
+      cancelDestination();
+    }
+    return;
+  }
   if (typeof isOnline === "function" && isOnline()) {
     const ok = await sendOnlineMove(u, to);
-    if (ok) cancelDestination();
+    if (ok) {
+      if (typeof sfx !== "undefined") sfx.play("move");
+      cancelDestination();
+    }
     return;
   }
   const { id, rev } = u;
   const ok = await commitOrder((s) => moveOrder(s, id, to, rev));
-  if (ok) cancelDestination();
+  if (ok) {
+    if (typeof sfx !== "undefined") sfx.play("move");
+    cancelDestination();
+  }
 }
 function renderArmy() {
   const unit = live.units.find((u) => u.id === activeUnit);
@@ -145,22 +186,52 @@ function renderArmy() {
   if (!unit) return;
   const isEnemy = unit.owned === false;
   const st = unitStats[unit.key] || unitStats.reserve;
+  const stackMembers = isEnemy ? [] : stackMembersOf(unit);
+  const isStacked = stackMembers.length >= 2;
+  const mergeable = isEnemy ? [] : mergeableAlliesOf(unit);
+  const canMerge =
+    !isEnemy &&
+    !unit.trip &&
+    mergeable.length >= 2 &&
+    (!isStacked || mergeable.length > stackMembers.length);
+
+  const totalHp = isStacked
+    ? stackMembers.reduce((a, m) => a + (m.hp ?? 0), 0)
+    : unit.hp;
+  const totalMaxHp = isStacked
+    ? stackMembers.reduce((a, m) => a + (m.maxHp ?? 0), 0)
+    : unit.maxHp;
   const hpText =
-    unit.hp !== undefined && unit.maxHp !== undefined
-      ? "HP " + unit.hp + "/" + unit.maxHp
+    totalHp !== undefined && totalMaxHp !== undefined
+      ? "HP " + totalHp + "/" + totalMaxHp
       : "";
+  const sumSoft = isStacked
+    ? stackMembers.reduce((a, m) => a + (unitStats[m.key]?.softAttack || 0), 0)
+    : st.softAttack;
+  const sumHard = isStacked
+    ? stackMembers.reduce((a, m) => a + (unitStats[m.key]?.hardAttack || 0), 0)
+    : st.hardAttack;
+  const sumDef = isStacked
+    ? stackMembers.reduce((a, m) => a + (unitStats[m.key]?.defense || 0), 0)
+    : st.defense;
+  const roleTag =
+    st.domain === "AIR"
+      ? " · Không kích 2.0°"
+      : st.domain === "NAVAL"
+        ? " · Hải pháo 1.5°"
+        : st.ranged
+          ? " · Pháo 1.25°"
+          : st.canConquer
+            ? " · Chiếm đất"
+            : "";
   const statMeta =
-    " · Công " +
-    st.softAttack +
-    "/" +
-    st.hardAttack +
-    " · Thủ " +
-    st.defense +
-    (st.ranged ? " · Pháo 1.25°" : st.canConquer ? " · Chiếm đất" : "");
+    " · Công " + sumSoft + "/" + sumHard + " · Thủ " + sumDef + roleTag;
   const atWar = live.online && live.diplomacy?.relation === "WAR";
   $("#armyName").textContent = isEnemy
     ? unitTitle(unit) + " · Đối phương"
-    : unitTitle(unit) + (hpText ? " (" + hpText + ")" : "");
+    : isStacked
+      ? "Đạo quân hợp thành (" + stackMembers.length + " đơn vị · " + hpText + ")"
+      : unitTitle(unit) + (hpText ? " (" + hpText + ")" : "");
   $("#armyInfo").textContent = isEnemy
     ? "Liên hệ trinh sát đối phương" +
       (hpText ? " · " + hpText : "") +
@@ -173,12 +244,13 @@ function renderArmy() {
       : unit.inCombat
         ? "ĐANG GIAO TRANH!" + statMeta
         : unit.trip
-          ? "Đang di chuyển tới " +
+          ? (isStacked ? "Cả đạo quân đang tới " : "Đang di chuyển tới ") +
             unit.trip.to +
             " · Còn " +
             countdown(unit.trip.end - live.time) +
             statMeta
           : (unit.city ? "Đóng quân tại " + unit.city : "Đã dừng trên đường") +
+            (isStacked ? " · Đang chọn " + unitTitle(unit) : "") +
             statMeta;
   $("#move").hidden = isEnemy;
   $("#halt").hidden = isEnemy;
@@ -186,10 +258,23 @@ function renderArmy() {
     ? "Hủy chọn đích"
     : unit.trip
       ? "Đổi điểm đến"
-      : atWar
-        ? "Di chuyển / Tiến công"
-        : "Di chuyển";
+      : isStacked
+        ? atWar
+          ? "Tiến công đạo quân"
+          : "Hành quân đạo quân"
+        : atWar
+          ? "Di chuyển / Tiến công"
+          : "Di chuyển";
   $("#halt").disabled = isEnemy || !unit.trip;
+  const mergeBtn = $("#stackMerge");
+  const splitBtn = $("#stackSplit");
+  if (mergeBtn) {
+    mergeBtn.hidden = !canMerge;
+    mergeBtn.textContent = "Gộp quân (" + mergeable.length + ")";
+  }
+  if (splitBtn) {
+    splitBtn.hidden = !isStacked;
+  }
 }
 const routeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg"),
   routeLine = document.createElementNS(routeSvg.namespaceURI, "polyline");
@@ -217,12 +302,24 @@ function drawUnits() {
     }
     if (x < -35 || x > w + 35 || y < -35 || y > h + 35) continue;
     const ownerTag = u.owned === false ? "enemy:" : "own:";
-    const key = u.city ? ownerTag + "city:" + u.city : ownerTag + "unit:" + u.id;
+    const key = u.city
+      ? ownerTag + "city:" + u.city
+      : u.stackId
+        ? ownerTag + "stack:" + u.stackId
+        : ownerTag + "unit:" + u.id;
     if (!groups.has(key))
-      groups.set(key, { x, y, enemy: u.owned === false, fighting: false, units: [] });
+      groups.set(key, {
+        x,
+        y,
+        enemy: u.owned === false,
+        fighting: false,
+        stacked: false,
+        units: [],
+      });
     const grp = groups.get(key);
     grp.units.push(u);
     if (u.inCombat) grp.fighting = true;
+    if (u.stackId) grp.stacked = true;
   }
   routeSvg.style.display = route ? "" : "none";
   for (const [key, node] of pins)
@@ -264,6 +361,7 @@ function drawUnits() {
     btn.classList.toggle("active", sel >= 0);
     btn.classList.toggle("enemy", g.enemy);
     btn.classList.toggle("fighting", g.fighting);
+    btn.classList.toggle("stacked", g.stacked && members.length > 1);
     btn.onclick = () => chooseCounter(members[(sel + 1) % members.length].id);
   }
 }
@@ -283,6 +381,33 @@ $("#move").onclick = () => {
   renderArmy();
 };
 $("#halt").onclick = () => sendMove(null);
+if ($("#stackMerge")) {
+  $("#stackMerge").onclick = async () => {
+    const u = live.units.find((a) => a.id === activeUnit);
+    if (!u) return;
+    const allies = mergeableAlliesOf(u);
+    if (allies.length < 2) return;
+    const ids = allies.map((a) => a.id);
+    if (typeof isOnline === "function" && isOnline()) {
+      await sendOnlineGroupUnits("MERGE", { unitIds: ids });
+    } else {
+      const ok = await commitOrder((s) => groupUnitsOrder(s, "MERGE", ids));
+      if (ok && typeof sfx !== "undefined") sfx.play("stack");
+    }
+  };
+}
+if ($("#stackSplit")) {
+  $("#stackSplit").onclick = async () => {
+    const u = live.units.find((a) => a.id === activeUnit);
+    if (!u?.stackId) return;
+    if (typeof isOnline === "function" && isOnline()) {
+      await sendOnlineGroupUnits("SPLIT", { unitIds: [u.id] });
+    } else {
+      const ok = await commitOrder((s) => groupUnitsOrder(s, "SPLIT", [u.id]));
+      if (ok && typeof sfx !== "undefined") sfx.play("stack");
+    }
+  };
+}
 $("#findUnit").onclick = () => {
   const u = live.units.find((u) => u.id === activeUnit);
   if (u) focusCounter(u);

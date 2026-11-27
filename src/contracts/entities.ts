@@ -438,6 +438,16 @@ export const CommandPayloadSchema = z.discriminatedUnion('type', [
       action: CampaignDiplomacyActionSchema,
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_GROUP_UNITS'),
+      nationId: NationIdSchema,
+      action: z.enum(['MERGE', 'SPLIT', 'MOVE_STACK']),
+      unitIds: z.array(UnitIdSchema).max(20).optional(),
+      stackId: z.string().min(3).max(40).optional(),
+      toCityId: RegionIdSchema.nullable().optional(),
+    })
+    .strict(),
 ]);
 export type CommandPayload = z.infer<typeof CommandPayloadSchema>;
 
@@ -762,13 +772,22 @@ export const DomainEventPayloadSchema = z.discriminatedUnion('type', [
     .object({
       type: z.literal('CAMPAIGN_COMBAT_RESOLVED'),
       reportId: z.string(),
-      kind: z.enum(['MELEE', 'BOMBARDMENT']),
+      kind: z.enum(['MELEE', 'BOMBARDMENT', 'AIRSTRIKE']),
       locationName: z.string(),
       attackerNationId: NationIdSchema,
       defenderNationId: NationIdSchema,
       damageToDefenders: z.number().int().min(0),
       damageToAttackers: z.number().int().min(0),
       destroyedUnitIds: z.array(UnitIdSchema),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_UNITS_GROUPED'),
+      nationId: NationIdSchema,
+      action: z.enum(['MERGE', 'SPLIT', 'MOVE_STACK']),
+      stackId: z.string().nullable(),
+      unitIds: z.array(UnitIdSchema),
     })
     .strict(),
   z

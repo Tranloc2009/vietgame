@@ -274,12 +274,23 @@ function draw() {
       ctx.ellipse(ux, uy, visionDeg * sx, visionDeg * sy, 0, 0, Math.PI * 2);
       ctx.stroke();
       if (st?.ranged) {
+        const strikeDeg = st.rangedRangeDeg || 1.25;
         ctx.setLineDash([3, 3]);
-        ctx.strokeStyle = "#f28b6b99";
-        ctx.fillStyle = "#c94c3818";
+        ctx.strokeStyle =
+          st.domain === "AIR"
+            ? "#7fc7ffaa"
+            : st.domain === "NAVAL"
+              ? "#6bd4c8aa"
+              : "#f28b6b99";
+        ctx.fillStyle =
+          st.domain === "AIR"
+            ? "#3c8ed118"
+            : st.domain === "NAVAL"
+              ? "#2da49918"
+              : "#c94c3818";
         ctx.lineWidth = 1.8;
         ctx.beginPath();
-        ctx.ellipse(ux, uy, 1.25 * sx, 1.25 * sy, 0, 0, Math.PI * 2);
+        ctx.ellipse(ux, uy, strikeDeg * sx, strikeDeg * sy, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
       }

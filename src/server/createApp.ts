@@ -39,8 +39,15 @@ import {
 } from '../simulation';
 import { ServerConfig } from './config';
 import { SqliteMatchStore } from './db/sqliteStore';
+import { SlidingWindowRateLimiter } from './rateLimiter';
 import { MatchClockScheduler } from './scheduler';
 import { scenarioRoute } from '../simulation/movementRoute';
+
+export interface ServerRateLimitConfig {
+  readonly authMaxPerMin?: number;
+  readonly commandMaxPerMin?: number;
+  readonly wsMaxPer10s?: number;
+}
 
 
 
@@ -186,6 +193,7 @@ function checkCommandNationOwnership(
     case 'CAMPAIGN_CANCEL_CITY_PROJECT':
     case 'CAMPAIGN_MOVE_UNIT':
     case 'CAMPAIGN_SET_DIPLOMACY':
+    case 'CAMPAIGN_GROUP_UNITS':
       if (command.payload.nationId !== memberNationId) {
         return {
           ok: false,
@@ -200,14 +208,44 @@ function checkCommandNationOwnership(
 export function createServerRuntime(
   config: ServerConfig,
   store: SqliteMatchStore,
-  clock: SimulationClock = createRealSystemClock()
+  clock: SimulationClock = createRealSystemClock(),
+  rateLimitOverrides?: ServerRateLimitConfig
 ): ServerRuntime {
   const app = express();
   app.use(express.json({ limit: '256kb' }));
 
+  const limiter = new SlidingWindowRateLimiter(clock);
+  const authMaxPerMin = rateLimitOverrides?.authMaxPerMin ?? 40;
+  const commandMaxPerMin = rateLimitOverrides?.commandMaxPerMin ?? 180;
+  const wsMaxPer10s = rateLimitOverrides?.wsMaxPer10s ?? 120;
+
+  const clientIpKey = (req: Request): string =>
+    (req.ip || req.socket.remoteAddress || 'unknown').replace(/^::ffff:/, '');
+
+  const checkHttpRateLimit = (
+    res: Response,
+    bucketKey: string,
+    maxRequests: number,
+    windowMs: number
+  ): boolean => {
+    const check = limiter.check(bucketKey, maxRequests, windowMs);
+    if (!check.allowed) {
+      res.setHeader('Retry-After', String(check.retryAfterSeconds));
+      res.status(429).json({
+        ok: false,
+        code: 'RATE_LIMITED',
+        reason: `Gửi quá nhiều yêu cầu. Vui lòng thử lại sau ${check.retryAfterSeconds} giây.`,
+        retryAfterSeconds: check.retryAfterSeconds,
+      });
+      return false;
+    }
+    return true;
+  };
+
   const httpServer = http.createServer(app);
   const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 });
   const socketSessions = new Map<WebSocket, SocketRoomSession>();
+  let nextWsClientSeq = 0;
 
   httpServer.on('upgrade', (request, socket, head) => {
     const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
@@ -287,6 +325,8 @@ export function createServerRuntime(
   });
 
   wss.on('connection', (socket: WebSocket) => {
+    nextWsClientSeq += 1;
+    const wsBucketKey = `ws:${nextWsClientSeq}`;
     const serverUtc = clock.nowUtc();
     socket.send(
       JSON.stringify({
@@ -305,6 +345,17 @@ export function createServerRuntime(
     });
 
     socket.on('message', (raw) => {
+      const wsCheck = limiter.check(wsBucketKey, wsMaxPer10s, 10_000);
+      if (!wsCheck.allowed) {
+        socket.send(
+          JSON.stringify({
+            type: 'room:error',
+            code: 'RATE_LIMITED',
+            reason: 'Tần suất gói tin WebSocket vượt ngưỡng cho phép.',
+          })
+        );
+        return;
+      }
       try {
         const parsed = JSON.parse(String(raw)) as {
           type?: string;
@@ -792,6 +843,7 @@ export function createServerRuntime(
 
   // P02-01: Register account (scrypt salted password hash + opaque Bearer token)
   app.post('/api/auth/register', (req: Request, res: Response) => {
+    if (!checkHttpRateLimit(res, `auth:${clientIpKey(req)}`, authMaxPerMin, 60_000)) return;
     const parsed = RegisterPayloadSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -827,6 +879,7 @@ export function createServerRuntime(
 
   // P02-01: Login account
   app.post('/api/auth/login', (req: Request, res: Response) => {
+    if (!checkHttpRateLimit(res, `auth:${clientIpKey(req)}`, authMaxPerMin, 60_000)) return;
     const parsed = LoginPayloadSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -895,6 +948,7 @@ export function createServerRuntime(
       title: parsed.data.title,
       preferredSlot: parsed.data.preferredSlot,
       scenarioId: parsed.data.scenarioId,
+      aiOpponent: parsed.data.aiOpponent,
       nowUtc: clock.nowUtc(),
       mode: config.isProduction ? 'PRODUCTION_REALTIME' : 'PREVIEW_FIXTURE',
     });
@@ -1162,6 +1216,7 @@ export function createServerRuntime(
   app.post('/api/rooms/:matchId/commands', (req: Request, res: Response) => {
     const user = requireAuthenticatedUser(req, res);
     if (!user) return;
+    if (!checkHttpRateLimit(res, `cmd:${user.userId}`, commandMaxPerMin, 60_000)) return;
 
     const parsedId = MatchIdSchema.safeParse(req.params.matchId);
     if (!parsedId.success) {

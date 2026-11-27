@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/contracts/contracts.test.ts src/simulation/simulation.test.ts src/server/server.test.ts src/content/worldMap72.test.ts src/server/phase02.test.ts src/server/vietnamCampaign.test.ts src/server/vietnamCampaignCombat.test.ts src/web/map/mapEngine.test.ts src/simulation/economy.test.ts src/simulation/phase03.test.ts",
+    "test": "tsx --test src/contracts/contracts.test.ts src/simulation/simulation.test.ts src/server/server.test.ts src/content/worldMap72.test.ts src/server/phase02.test.ts src/server/vietnamCampaign.test.ts src/server/vietnamCampaignCombat.test.ts src/server/vietnamCampaignT06.test.ts src/web/map/mapEngine.test.ts src/simulation/economy.test.ts src/simulation/phase03.test.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

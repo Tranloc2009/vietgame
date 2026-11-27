@@ -71,6 +71,7 @@ export const CreateRoomPayloadSchema = z
     title: z.string().trim().min(3).max(96),
     preferredSlot: HumanSlotSchema.default('NORTH'),
     scenarioId: ScenarioIdSchema.default('vietnam_1955'),
+    aiOpponent: z.boolean().default(false),
   })
   .strict();
 
@@ -287,6 +288,7 @@ export function projectRoomEventsForViewer(
       case 'CAMPAIGN_CITY_PROJECT_COMPLETED':
       case 'CAMPAIGN_UNIT_ORDER_ISSUED':
       case 'CAMPAIGN_UNIT_ARRIVED':
+      case 'CAMPAIGN_UNITS_GROUPED':
         return payload.nationId === viewerNationId ? [event] : [];
       case 'PHASE03_CYCLE_SETTLED':
         // The national report already carries the viewer's own capacity and alerts.
@@ -365,6 +367,8 @@ export function projectMatchForViewer(
           base: 0,
           bunker: 0,
           hospital: 0,
+          airbase: 0,
+          port: 0,
           reserve: 0,
           jobs: [],
         };

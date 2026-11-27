@@ -451,6 +451,46 @@ async function shutdownServer(server: BootedServer): Promise<void> {
         await pSouth.waitForFunction(() => live.diplomacy?.relation === 'WAR');
         await press(pNorth, '[data-close="national"]');
 
+        // T06 UI Check: Sound toggle (#soundToggle) & Interactive Guide (#help -> #guideBody)
+        await press(pNorth, '#soundToggle');
+        assert.equal(await pNorth.locator('#soundToggle').getAttribute('aria-pressed'), 'false');
+        await press(pNorth, '#soundToggle');
+        assert.equal(await pNorth.locator('#soundToggle').getAttribute('aria-pressed'), 'true');
+        await press(pNorth, '#help');
+        await pNorth.locator('#guideBody .guideList').waitFor({ state: 'visible' });
+        const guideText = (await pNorth.locator('#guideBody').textContent()) || '';
+        assert.ok(guideText.includes('Tiến độ chỉ huy'));
+        await press(pNorth, '[data-close="guide"]');
+
+        // T06 UI Check: Airbase + Coastal Port check on Đà Nẵng + Stack Merge & Split!
+        await press(pNorth, '#menuCity');
+        await pNorth.locator('.townRow').filter({ hasText: 'Đà Nẵng' }).click();
+        await press(pNorth, '[data-city-tab="build"]');
+        const buildHtmlText = (await pNorth.locator('#cityBody').textContent()) || '';
+        assert.ok(buildHtmlText.includes('Căn cứ không quân'));
+        assert.ok(buildHtmlText.includes('Quân cảng'));
+        await press(pNorth, '[data-city-tab="mobilize"]');
+        await press(pNorth, '[data-project="reserve"]');
+        await pNorth.locator('[data-cancel="reserve"]').waitFor({ state: 'visible' });
+        clock.advanceByMs(41_000);
+        await pNorth.evaluate(() => pullOnlineSnapshot());
+        await pNorth.waitForFunction(
+          () => live.units.filter((u: any) => u.owned !== false && u.city === 'Đà Nẵng').length >= 2
+        );
+        // Select Artillery at Đà Nẵng -> click Gộp quân (#stackMerge) -> verify Đạo quân hợp thành -> click Tách quân (#stackSplit)
+        await press(pNorth, '#menuUnits');
+        await pNorth.locator('.unitRow').filter({ hasText: 'Pháo binh' }).first().click();
+        await pNorth.locator('#stackMerge').waitFor({ state: 'visible' });
+        await press(pNorth, '#stackMerge');
+        await pNorth.waitForFunction(() =>
+          (document.querySelector('#armyName')?.textContent || '').includes('Đạo quân hợp thành')
+        );
+        await pNorth.locator('#stackSplit').waitFor({ state: 'visible' });
+        await press(pNorth, '#stackSplit');
+        await pNorth.waitForFunction(() =>
+          !(document.querySelector('#armyName')?.textContent || '').includes('Đạo quân hợp thành')
+        );
+
         // Select North Motor (#1) -> order assault on enemy Quảng Ngãi via #menuCity enemy list
         await press(pNorth, '#menuUnits');
         await pNorth.locator('[data-select-unit="unt_vn_0001"]').click();
@@ -508,6 +548,32 @@ async function shutdownServer(server: BootedServer): Promise<void> {
         const matchId = await pNorth.evaluate(() => mp.room.matchId);
         const replay = server.store.verifyMatchReplay(matchId);
         assert.equal(replay?.verified, true);
+
+        // T06 UI Check (desktop): 1-click "Đấu với Máy (AI)" mode starts immediately & AI runs autonomously!
+        let aiMatchVerified = 'bỏ qua (chỉ kiểm trên desktop)';
+        if (vp.name === 'desktop') {
+          await press(pNorth, '[data-dismiss-victory="1"]');
+          await press(pNorth, '#menuOnline');
+          await press(pNorth, '#mpLeaveBtn');
+          await pNorth.locator('#mpCreateAiRoom').waitFor({ state: 'visible' });
+          await press(pNorth, '#mpCreateAiRoom');
+          await pNorth.waitForFunction(
+            () => isOnline() === true && Boolean(live.aiControlledNationId)
+          );
+          const aiMatchId = await pNorth.evaluate(() => mp.room.matchId);
+          for (let k = 0; k < 10; k += 1) {
+            clock.advanceByMs(20_000);
+            server.runtime.scheduler.runCatchUpCycle();
+          }
+          await pNorth.evaluate(() => pullOnlineSnapshot());
+          const aiReplay = server.store.verifyMatchReplay(aiMatchId);
+          assert.equal(aiReplay?.verified, true);
+          const aiState = server.store.getMatch(aiMatchId)!.state.campaignState!;
+          assert.ok(aiState.nations[WORLD_NATIONS.south].learned.includes('motor'));
+          assert.ok(aiState.nations[WORLD_NATIONS.south].stats.unitsMobilized >= 1);
+          aiMatchVerified = 'đạt';
+        }
+
         assert.deepEqual(errors, []);
 
         report.push({
@@ -524,8 +590,10 @@ async function shutdownServer(server: BootedServer): Promise<void> {
           capIIGiam24s: 'đạt',
           cachLyQuyenVaTamNhin: 'đạt',
           ngoaiGiaoVaPhaoKich: 'đạt',
+          gopTachDaoQuanVaAmThanhHuongDan: 'đạt',
           tienCongVaChiemQuangNgai: 'đạt',
           baoChiVaBangChienThang: 'đạt',
+          dauVoiMayAI: aiMatchVerified,
           replayHash: 'đạt',
           errors: 0,
         });

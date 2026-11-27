@@ -20,6 +20,10 @@ const icons = {
     '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18"/>',
   diplomacy:
     '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/>',
+  soundOn:
+    '<path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
+  soundOff:
+    '<path d="M11 5 6 9H2v6h4l5 4zM23 9l-6 6M17 9l6 6"/>',
 };
 for (const el of /** @type {NodeListOf<HTMLElement>} */ (
   document.querySelectorAll("[data-icon]")
@@ -112,7 +116,16 @@ function listPlaces() {
 }
 $("#query").oninput = listPlaces;
 $("#places").onclick = () => panel("drawer");
-$("#help").onclick = () => panel("guide");
+$("#help").onclick = () => {
+  panel("guide");
+  if (!$("#guide").hidden && typeof renderInteractiveGuide === "function") {
+    renderInteractiveGuide();
+  }
+};
+if ($("#soundToggle") && typeof sfx !== "undefined") {
+  sfx.init();
+  $("#soundToggle").onclick = () => sfx.toggle();
+}
 $("#layers").onclick = () => panel("settings");
 for (const btn of /** @type {NodeListOf<HTMLButtonElement>} */ (
   document.querySelectorAll("[data-close]")
