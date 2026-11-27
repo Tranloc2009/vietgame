@@ -16,6 +16,8 @@ const icons = {
   shield:
     '<path d="M12 2 21 6v6q-1 6-9 10-8-4-9-10V6z"/><path d="m12 6 1.5 3.5 3.9.3-3 2.6 1 3.8-3.4-2-3.4 2 1-3.8-3-2.6 3.9-.3z"/>',
   search: '<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',
+  online:
+    '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18"/>',
 };
 for (const el of /** @type {NodeListOf<HTMLElement>} */ (
   document.querySelectorAll("[data-icon]")
@@ -24,7 +26,7 @@ for (const el of /** @type {NodeListOf<HTMLElement>} */ (
     '<svg aria-hidden="true" viewBox="0 0 24 24">' +
     icons[el.dataset.icon] +
     "</svg>";
-const panels = ["drawer", "settings", "guide", "national"];
+const panels = ["drawer", "settings", "guide", "national", "mpPanel"];
 function panel(id) {
   const open = id && $("#" + id).hidden;
   for (const key of panels) $("#" + key).hidden = !(open && key === id);
@@ -52,10 +54,25 @@ function selectItem(p, go = false) {
   renderMatch();
   hover = null;
   $("#tip").hidden = true;
-  $("#kind").textContent = p ? p.type.toLocaleUpperCase("vi") : "KHU VỰC";
+  $("#kind").textContent = p
+    ? towns.includes(p) && typeof isOnline === "function" && isOnline()
+      ? live?.cities?.[p.name]?.owned
+        ? (p.capital ? "THỦ ĐÔ" : "THÀNH PHỐ") + " · CỦA BẠN"
+        : "THÀNH PHỐ ĐỐI PHƯƠNG"
+      : p.type.toLocaleUpperCase("vi")
+    : "KHU VỰC";
   $("#name").textContent = p?.name || "Việt Nam";
   $("#detail").textContent = p
-    ? Number(p.lat).toFixed(2) + "° B   ·   " + Number(p.lon).toFixed(2) + "° Đ"
+    ? Number(p.lat).toFixed(2) +
+      "° B   ·   " +
+      Number(p.lon).toFixed(2) +
+      "° Đ" +
+      (towns.includes(p) &&
+      typeof isOnline === "function" &&
+      isOnline() &&
+      live?.cities?.[p.name]?.owned === false
+        ? " · Kiểm soát bởi đối phương"
+        : "")
     : "Bản đồ toàn quốc";
   $("#clear").hidden = !p;
   if (go && p) fly(+p.lon, +p.lat, Math.max(camera.z, 2.25));

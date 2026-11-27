@@ -1,8 +1,8 @@
 # Hạng mục còn mở
 
-- P0. Hai sản phẩm có dữ liệu khác nhau. Bản chơi đơn dùng bảy tài nguyên và tập địa danh riêng. Máy chủ dùng bản đồ 72 vùng và nền kinh tế tám tài nguyên đã có. Cần định danh kịch bản riêng khi bổ sung nội dung hiện đại.
-- P0. Nghiên cứu và huy động trên máy chủ, giao tranh, chiếm đất và thắng bằng điểm còn thiếu. Luồng di chuyển trong phòng hiện chỉ qua vùng đang kiểm soát.
-- P0. Các lệnh tương thích cũ về tác vụ và chính sách còn nhận tham số kinh tế từ client. Cần danh mục và ràng buộc tại cổng nhận lệnh phòng trước khi mở công khai.
-- P1. Chưa thu thập đủ bằng chứng client mobile hoặc đo tốc độ GPU. Bản build có cảnh báo dung lượng.
-- P1. Chưa kiểm thử phục hồi bản sao lưu vận hành, thử tải và chơi trên thiết bị thật.
-- P2. Chưa đối chiếu trọn bộ âm thanh, trạng thái giao diện và bài báo theo ngày.
+- **P0 — Giao tranh, chiếm đóng lãnh thổ và điểm chiến thắng:** Kịch bản `vietnam_campaign_v1` đã có nghiên cứu, xây văn phòng, huy động và điều quân trên máy chủ trong phạm vi thành phố kiểm soát; chưa có chiến đấu mô phỏng, chiếm thành phố đối phương và thắng bằng điểm (thuộc T05).
+- **P0 — Cây công nghệ và danh mục quân đầy đủ WW3:** Mới triển khai nhánh Bộ binh cơ giới (Cấp I, Cấp II), Đội dự bị, Xưởng công nghiệp và Văn phòng tuyển dụng theo đúng cấu hình chiến dịch Việt Nam; các nhánh thiết giáp, pháo, không quân, hải quân còn ở pha kế tiếp.
+- **P0 — Ràng buộc cổng lệnh cũ thời P01:** Các lệnh tương thích cũ (`SCHEDULE_JOB`, `ENACT_POLICY` trên phòng 1955) còn nhận tham số chi phí từ payload; mọi lệnh mới `CAMPAIGN_*` trên `vietnam_campaign_v1` đã khóa 100% giá và thời gian ở danh mục máy chủ.
+- **P1 — Kiểm thử thiết bị di động thật & dung lượng bundle:** Cảm ứng đã kiểm thử trên Edge giả lập (`390×844` và `844×390`); chưa đo trên điện thoại thật hoặc GPU thật. `dist/assets/rooms-*.js` còn cảnh báo kích thước > 500 kB của Vite.
+- **P1 — Thử tải nhiều phòng đồng thời & rate-limiting:** Chưa chạy stress test nhiều phòng đồng thời và chưa thêm rate-limit ở tầng HTTP/WS.
+- **P2 — Âm thanh, hướng dẫn tương tác và nhật báo theo ngày:** Chưa triển khai.

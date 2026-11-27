@@ -78,12 +78,18 @@ function label(text, x, y, font, fill, edge, align = "center") {
   ctx.fillStyle = fill;
   ctx.fillText(text, x, y);
 }
-function emblem(x, y, capital, active) {
+function emblem(x, y, capital, active, owned = true) {
   ctx.save();
   ctx.translate(x, y);
   const size = capital ? 9 : 5;
-  ctx.fillStyle = active ? "#ffd666" : capital ? "#b19b58" : "#d7d1ad";
-  ctx.strokeStyle = "#25332d";
+  ctx.fillStyle = active
+    ? "#ffd666"
+    : !owned
+      ? "#b56b60"
+      : capital
+        ? "#b19b58"
+        : "#d7d1ad";
+  ctx.strokeStyle = !owned ? "#3b1f1c" : "#25332d";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(0, -size);
@@ -230,7 +236,11 @@ function draw() {
         continue;
       boxes.push(b);
       visible.push({ c, b });
-      emblem(x, y, c.capital, c === selected || c === hover);
+      const ownedCity =
+        typeof live !== "undefined" && live?.cities?.[c.name]?.owned === false
+          ? false
+          : true;
+      emblem(x, y, c.capital, c === selected || c === hover, ownedCity);
       if (layers.labels)
         label(
           c.name,

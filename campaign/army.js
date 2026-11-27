@@ -2,7 +2,13 @@
 let activeUnit = null,
   choosingDestination = false;
 function unitTitle(u) {
-  return projects[u.key].label + " #" + u.id;
+  return projects[u.key].label + " #" + (u.displayNumber ?? u.id);
+}
+function simNow() {
+  if (typeof isOnline === "function" && isOnline()) {
+    return onlineNowUtc();
+  }
+  return Date.now();
 }
 function unitList(units) {
   return units
@@ -78,7 +84,7 @@ function studyHtml() {
     .join("");
 }
 function focusCounter(u) {
-  const p = pointAt(u, Date.now());
+  const p = pointAt(u, simNow());
   fly(p.lon, p.lat, Math.max(camera.z, 2.25));
 }
 function chooseCounter(id, focus = false) {
@@ -101,6 +107,16 @@ function cancelDestination() {
 async function sendMove(to) {
   const u = live.units.find((u) => u.id === activeUnit);
   if (!u) return;
+  if (u.owned === false) {
+    notice("Không thể điều khiển đơn vị của đối phương.");
+    cancelDestination();
+    return;
+  }
+  if (typeof isOnline === "function" && isOnline()) {
+    const ok = await sendOnlineMove(u, to);
+    if (ok) cancelDestination();
+    return;
+  }
   const { id, rev } = u;
   const ok = await commitOrder((s) => moveOrder(s, id, to, rev));
   if (ok) cancelDestination();
@@ -111,23 +127,32 @@ function renderArmy() {
   $("#selection").hidden = !!unit;
   $("#stage").classList.toggle("picking", !!unit && choosingDestination);
   if (!unit) return;
-  $("#armyName").textContent = unitTitle(unit);
-  $("#armyInfo").textContent = choosingDestination
-    ? "Chọn thành phố đích trên bản đồ hoặc trong menu Thành phố."
-    : unit.trip
-      ? "Đang di chuyển tới " +
-        unit.trip.to +
-        " · Còn " +
-        countdown(unit.trip.end - live.time)
-      : unit.city
-        ? "Đóng quân tại " + unit.city
-        : "Đã dừng trên đường";
+  const isEnemy = unit.owned === false;
+  $("#armyName").textContent = isEnemy
+    ? unitTitle(unit) + " · Đối phương"
+    : unitTitle(unit);
+  $("#armyInfo").textContent = isEnemy
+    ? "Liên hệ trinh sát đối phương" +
+      (unit.city ? " tại " + unit.city : "") +
+      " · Không thể ra lệnh."
+    : choosingDestination
+      ? "Chọn thành phố đích trên bản đồ hoặc trong menu Thành phố."
+      : unit.trip
+        ? "Đang di chuyển tới " +
+          unit.trip.to +
+          " · Còn " +
+          countdown(unit.trip.end - live.time)
+        : unit.city
+          ? "Đóng quân tại " + unit.city
+          : "Đã dừng trên đường";
+  $("#move").hidden = isEnemy;
+  $("#halt").hidden = isEnemy;
   $("#move").textContent = choosingDestination
     ? "Hủy chọn đích"
     : unit.trip
       ? "Đổi điểm đến"
       : "Di chuyển";
-  $("#halt").disabled = !unit.trip;
+  $("#halt").disabled = isEnemy || !unit.trip;
 }
 const routeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg"),
   routeLine = document.createElementNS(routeSvg.namespaceURI, "polyline");
@@ -138,12 +163,12 @@ const pins = new Map();
 function drawUnits() {
   if (!live) return;
   const groups = new Map(),
-    now = Date.now();
+    now = simNow();
   let route = false;
   for (const u of live.units) {
     const pos = pointAt(u, now),
       [x, y] = projectPoint(pos.lon, pos.lat);
-    if (u.id === activeUnit && u.trip) {
+    if (u.id === activeUnit && u.trip && u.owned !== false) {
       const points = [pos, ...travelSegment(u, now).remaining];
       routeLine.setAttribute(
         "points",
@@ -152,8 +177,9 @@ function drawUnits() {
       route = true;
     }
     if (x < -35 || x > w + 35 || y < -35 || y > h + 35) continue;
-    const key = u.city ? "city:" + u.city : "unit:" + u.id;
-    if (!groups.has(key)) groups.set(key, { x, y, units: [] });
+    const ownerTag = u.owned === false ? "enemy:" : "own:";
+    const key = u.city ? ownerTag + "city:" + u.city : ownerTag + "unit:" + u.id;
+    if (!groups.has(key)) groups.set(key, { x, y, enemy: u.owned === false, units: [] });
     groups.get(key).units.push(u);
   }
   routeSvg.style.display = route ? "" : "none";
@@ -172,8 +198,9 @@ function drawUnits() {
     }
     const members = g.units,
       sel = members.findIndex((u) => u.id === activeUnit);
+    const firstLabel = members[0].displayNumber ?? members[0].id;
     btn.textContent =
-      "▣ " + (members.length > 1 ? "×" + members.length : members[0].id);
+      "▣ " + (members.length > 1 ? "×" + members.length : firstLabel);
     btn.title = members.map(unitTitle).join(", ");
     btn.setAttribute("aria-label", "Chọn quân: " + btn.title);
     btn.style.transform =
@@ -183,6 +210,7 @@ function drawUnits() {
       Math.round(g.y - 29) +
       "px)";
     btn.classList.toggle("active", sel >= 0);
+    btn.classList.toggle("enemy", g.enemy);
     btn.onclick = () => chooseCounter(members[(sel + 1) % members.length].id);
   }
 }
@@ -210,12 +238,28 @@ document.addEventListener("click", (e) => {
   if (!(e.target instanceof Element)) return;
   const b = /** @type {HTMLButtonElement} */ (e.target.closest("button"));
   if (!b || b.disabled) return;
-  if (b.dataset.selectUnit) chooseCounter(Number(b.dataset.selectUnit), true);
-  if (b.dataset.study) commitOrder((s) => studyOrder(s, b.dataset.study));
-  if (b.dataset.abort)
-    commitOrder((s) =>
-      studyOrder(s, b.dataset.abort, true, Number(b.dataset.start)),
-    );
+  if (b.dataset.selectUnit) {
+    const rawId = b.dataset.selectUnit;
+    const unitId =
+      typeof isOnline === "function" && isOnline() ? rawId : Number(rawId);
+    chooseCounter(unitId, true);
+  }
+  if (b.dataset.study) {
+    if (typeof isOnline === "function" && isOnline()) {
+      sendOnlineResearch(b.dataset.study, false, 0);
+    } else {
+      commitOrder((s) => studyOrder(s, b.dataset.study));
+    }
+  }
+  if (b.dataset.abort) {
+    if (typeof isOnline === "function" && isOnline()) {
+      sendOnlineResearch(b.dataset.abort, true, Number(b.dataset.start));
+    } else {
+      commitOrder((s) =>
+        studyOrder(s, b.dataset.abort, true, Number(b.dataset.start)),
+      );
+    }
+  }
 });
 canvas.addEventListener("contextmenu", (e) => {
   if (!activeUnit) return;

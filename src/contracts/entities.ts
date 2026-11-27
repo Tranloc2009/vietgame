@@ -21,6 +21,14 @@ import {
   UtcEpochMsSchema,
 } from './primitives';
 import {
+  CampaignDoctrineKeySchema,
+  CampaignLaneSchema,
+  CampaignMatchStateSchema,
+  CampaignProjectKeySchema,
+  CampaignResourceTupleSchema,
+  ScenarioIdSchema,
+} from './campaign';
+import {
   BudgetAllocationSchema,
   ExtendedResourceBasketSchema,
   ExtendedResourceTypeSchema,
@@ -378,6 +386,48 @@ export const CommandPayloadSchema = z.discriminatedUnion('type', [
       paused: z.boolean(),
     })
     .strict(),
+  // Modern Vietnam Campaign (vietnam_campaign_v1) authoritative commands
+  z
+    .object({
+      type: z.literal('CAMPAIGN_START_RESEARCH'),
+      nationId: NationIdSchema,
+      doctrineKey: CampaignDoctrineKeySchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_CANCEL_RESEARCH'),
+      nationId: NationIdSchema,
+      doctrineKey: CampaignDoctrineKeySchema,
+      expectedStartUtc: UtcEpochMsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_START_CITY_PROJECT'),
+      nationId: NationIdSchema,
+      cityId: RegionIdSchema,
+      projectKey: CampaignProjectKeySchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_CANCEL_CITY_PROJECT'),
+      nationId: NationIdSchema,
+      cityId: RegionIdSchema,
+      projectKey: CampaignProjectKeySchema,
+      expectedStartUtc: UtcEpochMsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_MOVE_UNIT'),
+      nationId: NationIdSchema,
+      unitId: UnitIdSchema,
+      toCityId: RegionIdSchema.nullable(),
+      expectedRev: z.number().int().min(0),
+    })
+    .strict(),
 ]);
 export type CommandPayload = z.infer<typeof CommandPayloadSchema>;
 
@@ -612,6 +662,82 @@ export const DomainEventPayloadSchema = z.discriminatedUnion('type', [
       pausedFacilityIds: z.array(FacilityIdSchema),
     })
     .strict(),
+  // Modern Vietnam Campaign (vietnam_campaign_v1) domain events
+  z
+    .object({
+      type: z.literal('CAMPAIGN_RESEARCH_STARTED'),
+      nationId: NationIdSchema,
+      doctrineKey: CampaignDoctrineKeySchema,
+      startUtc: UtcEpochMsSchema,
+      endUtc: UtcEpochMsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_RESEARCH_CANCELLED'),
+      nationId: NationIdSchema,
+      doctrineKey: CampaignDoctrineKeySchema,
+      refunded: CampaignResourceTupleSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_RESEARCH_COMPLETED'),
+      nationId: NationIdSchema,
+      doctrineKey: CampaignDoctrineKeySchema,
+      completedAtUtc: UtcEpochMsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_CITY_PROJECT_STARTED'),
+      nationId: NationIdSchema,
+      cityId: RegionIdSchema,
+      projectKey: CampaignProjectKeySchema,
+      lane: CampaignLaneSchema,
+      startUtc: UtcEpochMsSchema,
+      endUtc: UtcEpochMsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_CITY_PROJECT_CANCELLED'),
+      nationId: NationIdSchema,
+      cityId: RegionIdSchema,
+      projectKey: CampaignProjectKeySchema,
+      refunded: CampaignResourceTupleSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_CITY_PROJECT_COMPLETED'),
+      nationId: NationIdSchema,
+      cityId: RegionIdSchema,
+      projectKey: CampaignProjectKeySchema,
+      newLevel: z.number().int().min(0).optional(),
+      spawnedUnitId: UnitIdSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_UNIT_ORDER_ISSUED'),
+      nationId: NationIdSchema,
+      unitId: UnitIdSchema,
+      toCityId: RegionIdSchema.nullable(),
+      startUtc: UtcEpochMsSchema,
+      endUtc: UtcEpochMsSchema.nullable(),
+      durationMs: z.number().int().min(0),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_UNIT_ARRIVED'),
+      nationId: NationIdSchema,
+      unitId: UnitIdSchema,
+      cityId: RegionIdSchema,
+      arrivedAtUtc: UtcEpochMsSchema,
+    })
+    .strict(),
 ]);
 export type DomainEventPayload = z.infer<typeof DomainEventPayloadSchema>;
 
@@ -682,6 +808,7 @@ export const MatchStateSchema = z
   .object({
     schemaVersion: SchemaVersionFieldSchema,
     matchId: MatchIdSchema,
+    scenarioId: ScenarioIdSchema.optional(),
     title: z.string().min(1).max(120),
     version: z.number().int().min(0),
     createdAtUtc: UtcEpochMsSchema,
@@ -698,6 +825,7 @@ export const MatchStateSchema = z
     economicState: EconomicMatchStateSchema.optional(),
     economicLedger: z.array(EconomicLedgerEntrySchema).optional(),
     phase03Economy: Phase03EconomyStateSchema.optional(),
+    campaignState: CampaignMatchStateSchema.optional(),
     eventSequence: z.number().int().min(0),
     events: z.array(DomainEventSchema),
     idempotencyReceipts: z.record(z.string(), IdempotencyReceiptSchema),

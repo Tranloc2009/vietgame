@@ -17,10 +17,13 @@ import {
   NationIdSchema,
   PublicUser,
   RoomStatus,
+  ScenarioId,
+  ScenarioIdSchema,
   UserId,
   UserIdSchema,
   UtcEpochMs,
 } from '../../contracts';
+import { createVietnamCampaignMatchState } from '../../content/vietnamCampaignScenario';
 import { createWorld72MatchState, WORLD_ACTORS, WORLD_NATIONS } from '../../content/worldMap72';
 import {
   assertSimulationInvariants,
@@ -292,6 +295,14 @@ const MIGRATIONS: readonly MigrationDefinition[] = [
         ON command_log (match_id, id ASC);
     `,
   },
+  {
+    id: '004_scenario_id_on_match_rooms',
+    description:
+      'Add scenario_id column to match_rooms defaulting to vietnam_1955 so historical rooms and modern Vietnam campaign rooms coexist cleanly',
+    sql: `
+      ALTER TABLE match_rooms ADD COLUMN scenario_id TEXT NOT NULL DEFAULT 'vietnam_1955';
+    `,
+  },
 ];
 
 function hashPassword(password: string, saltHex: string): string {
@@ -316,6 +327,7 @@ function generateInviteCode(): string {
 
 interface RawRoomRow {
   match_id: string;
+  scenario_id?: string;
   invite_code: string;
   title: string;
   status: RoomStatus;
@@ -578,6 +590,7 @@ export class SqliteMatchStore {
 
     return {
       matchId: MatchIdSchema.parse(row.match_id),
+      scenarioId: ScenarioIdSchema.parse(row.scenario_id ?? 'vietnam_1955'),
       inviteCode: row.invite_code,
       title: row.title,
       status: row.status,
@@ -626,17 +639,28 @@ export class SqliteMatchStore {
     preferredSlot: HumanSlot;
     nowUtc: number;
     mode: 'PRODUCTION_REALTIME' | 'PREVIEW_FIXTURE';
+    scenarioId?: ScenarioId;
   }): { room: MatchRoomSummary; state: MatchState; stateHash: string } {
     const matchId = MatchIdSchema.parse(`mch_${crypto.randomBytes(6).toString('hex')}`);
     const inviteCode = generateInviteCode();
     const seed = crypto.randomBytes(4).readUInt32BE(0);
-    const initialState = createWorld72MatchState({
-      matchId,
-      title: options.title,
-      seed,
-      createdAtUtc: options.nowUtc,
-      mode: options.mode,
-    });
+    const scenarioId: ScenarioId = options.scenarioId ?? 'vietnam_1955';
+    const initialState =
+      scenarioId === 'vietnam_campaign_v1'
+        ? createVietnamCampaignMatchState({
+            matchId,
+            title: options.title,
+            seed,
+            createdAtUtc: options.nowUtc,
+            mode: options.mode,
+          })
+        : createWorld72MatchState({
+            matchId,
+            title: options.title,
+            seed,
+            createdAtUtc: options.nowUtc,
+            mode: options.mode,
+          });
     const stateHash = computeStateHash(initialState);
     const stateJson = canonicalStringify(initialState);
 
@@ -668,13 +692,14 @@ export class SqliteMatchStore {
       this.db
         .prepare(
           `INSERT INTO match_rooms (
-            match_id, invite_code, title, status, created_by_user_id,
+            match_id, scenario_id, invite_code, title, status, created_by_user_id,
             north_user_id, south_user_id, north_ready, south_ready,
             winner_slot, ended_reason, locked_at_utc, created_at_utc, updated_at_utc
-          ) VALUES (?, ?, ?, 'LOBBY', ?, ?, ?, 0, 0, NULL, NULL, NULL, ?, ?)`
+          ) VALUES (?, ?, ?, ?, 'LOBBY', ?, ?, ?, 0, 0, NULL, NULL, NULL, ?, ?)`
         )
         .run(
           matchId,
+          scenarioId,
           inviteCode,
           options.title,
           options.creator.userId,

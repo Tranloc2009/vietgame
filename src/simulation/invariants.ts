@@ -301,6 +301,60 @@ export function assertSimulationInvariants(state: MatchState): void {
     }
   }
 
+  // 8. Modern Vietnam Campaign (vietnam_campaign_v1) invariants
+  if (state.campaignState) {
+    const cs = state.campaignState;
+    if ((cs.timeUtc as number) < (cs.startUtc as number)) {
+      violations.push(`campaignState.timeUtc (${cs.timeUtc}) precedes startUtc (${cs.startUtc})`);
+    }
+    if ((cs.timeUtc as number) > (state.currentUtc as number)) {
+      violations.push(`campaignState.timeUtc (${cs.timeUtc}) exceeds state.currentUtc (${state.currentUtc})`);
+    }
+    for (const [nationId, cn] of Object.entries(cs.nations)) {
+      if (!state.nations[nationId]) {
+        violations.push(`campaignState.nations references unknown nation "${nationId}"`);
+      }
+      for (let i = 0; i < cn.balance.length; i += 1) {
+        if (!Number.isSafeInteger(cn.balance[i]) || cn.balance[i] < 0) {
+          violations.push(`campaignState nation "${nationId}" invalid balance[${i}]=${cn.balance[i]}`);
+        }
+      }
+    }
+    for (const city of Object.values(cs.cities)) {
+      if (!state.nations[city.ownerNationId] || !cs.nations[city.ownerNationId]) {
+        violations.push(`campaignState city "${city.cityId}" owner "${city.ownerNationId}" missing`);
+      }
+      const buildJobs = city.jobs.filter((j) => j.lane === 'build');
+      const mobilizeJobs = city.jobs.filter((j) => j.lane === 'mobilize');
+      if (buildJobs.length > 1) {
+        violations.push(`campaignState city "${city.cityId}" has ${buildJobs.length} concurrent build jobs`);
+      }
+      if (mobilizeJobs.length > 1) {
+        violations.push(`campaignState city "${city.cityId}" has ${mobilizeJobs.length} concurrent mobilize jobs`);
+      }
+    }
+    let maxDisplayNum = 0;
+    for (const unit of Object.values(cs.units)) {
+      if (!state.nations[unit.ownerNationId] || !cs.nations[unit.ownerNationId]) {
+        violations.push(`campaignState unit "${unit.unitId}" owner "${unit.ownerNationId}" missing`);
+      }
+      if (unit.cityId !== null && !cs.cities[unit.cityId]) {
+        violations.push(`campaignState unit "${unit.unitId}" references unknown city "${unit.cityId}"`);
+      }
+      if (!state.units[unit.unitId]) {
+        violations.push(`campaignState unit "${unit.unitId}" missing mirror in state.units`);
+      }
+      if (unit.displayNumber > maxDisplayNum) {
+        maxDisplayNum = unit.displayNumber;
+      }
+    }
+    if (cs.nextUnitNumber <= maxDisplayNum) {
+      violations.push(
+        `campaignState.nextUnitNumber (${cs.nextUnitNumber}) must exceed max unit displayNumber (${maxDisplayNum})`
+      );
+    }
+  }
+
   if (violations.length > 0) {
     throw new SimulationInvariantError(violations);
   }

@@ -1,5 +1,6 @@
 export * from './versions';
 export * from './primitives';
+export * from './campaign';
 export * from './phase03';
 export * from './entities';
 export * from './serialization';

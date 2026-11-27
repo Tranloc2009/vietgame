@@ -1,15 +1,19 @@
 import { z } from 'zod';
 import {
   ActorIdSchema,
+  CAMPAIGN_OBSERVATION_RADIUS_DEG,
+  CampaignMatchState,
   ClientMatchViewSchema,
   DomainEvent,
   DomainEventSchema,
   FixedPointIntSchema,
   HumanSlotSchema,
+  interpolateCampaignUnitPosition,
   MatchIdSchema,
   MatchState,
   NationIdSchema,
   RegionIdSchema,
+  ScenarioIdSchema,
   UtcEpochMsSchema,
 } from './index';
 
@@ -65,6 +69,7 @@ export const CreateRoomPayloadSchema = z
   .object({
     title: z.string().trim().min(3).max(96),
     preferredSlot: HumanSlotSchema.default('NORTH'),
+    scenarioId: ScenarioIdSchema.default('vietnam_1955'),
   })
   .strict();
 
@@ -105,6 +110,7 @@ export type RoomSlotInfo = z.infer<typeof RoomSlotInfoSchema>;
 export const MatchRoomSummarySchema = z
   .object({
     matchId: MatchIdSchema,
+    scenarioId: ScenarioIdSchema.default('vietnam_1955'),
     inviteCode: z.string(),
     title: z.string(),
     status: RoomStatusSchema,
@@ -272,6 +278,14 @@ export function projectRoomEventsForViewer(
       case 'PRODUCTION_COMPLETED':
       case 'PRODUCTION_CANCELLED':
       case 'FACILITY_STATUS_CHANGED':
+      case 'CAMPAIGN_RESEARCH_STARTED':
+      case 'CAMPAIGN_RESEARCH_CANCELLED':
+      case 'CAMPAIGN_RESEARCH_COMPLETED':
+      case 'CAMPAIGN_CITY_PROJECT_STARTED':
+      case 'CAMPAIGN_CITY_PROJECT_CANCELLED':
+      case 'CAMPAIGN_CITY_PROJECT_COMPLETED':
+      case 'CAMPAIGN_UNIT_ORDER_ISSUED':
+      case 'CAMPAIGN_UNIT_ARRIVED':
         return payload.nationId === viewerNationId ? [event] : [];
       case 'PHASE03_CYCLE_SETTLED':
         // The national report already carries the viewer's own capacity and alerts.
@@ -299,25 +313,118 @@ export function projectMatchForViewer(
     if(t.proposerNationId===viewerNationId)observers.add(t.targetNationId);
     if(t.targetNationId===viewerNationId)observers.add(t.proposerNationId);
   }
-  const visible = new Set(Object.values(state.regions).filter(r=>observers.has(r.controllerNationId)).map(r=>r.regionId));
-  for(const unit of Object.values(state.units)){
-    if(!observers.has(unit.ownerNationId))continue;
-    visible.add(unit.regionId);
-    for(const neighbor of state.regions[unit.regionId].adjacentRegionIds)visible.add(neighbor);
-  }
-  for (const [unitId, unit] of Object.entries(publicFields.units)) {
-    if(!viewerNationId || (unit.ownerNationId!==viewerNationId&&!visible.has(unit.regionId)))continue;
-    if (viewerNationId && unit.ownerNationId !== viewerNationId) {
+
+  let filteredCampaignState: CampaignMatchState | undefined = undefined;
+  if (publicFields.campaignState) {
+    const cs = publicFields.campaignState;
+    const observerPoints: Array<{ lon: number; lat: number }> = [];
+    if (viewerNationId) {
+      for (const city of Object.values(cs.cities)) {
+        if (observers.has(city.ownerNationId)) {
+          observerPoints.push({ lon: city.lon, lat: city.lat });
+        }
+      }
+      for (const unit of Object.values(cs.units)) {
+        if (observers.has(unit.ownerNationId)) {
+          observerPoints.push(interpolateCampaignUnitPosition(unit, state.currentUtc as number));
+        }
+      }
+    }
+    const radiusSq = CAMPAIGN_OBSERVATION_RADIUS_DEG * CAMPAIGN_OBSERVATION_RADIUS_DEG;
+    const isPointObserved = (pt: { lon: number; lat: number }): boolean => {
+      for (const op of observerPoints) {
+        const dx = pt.lon - op.lon;
+        const dy = pt.lat - op.lat;
+        if (dx * dx + dy * dy <= radiusSq) return true;
+      }
+      return false;
+    };
+
+    const filteredCampaignNations: CampaignMatchState['nations'] =
+      viewerNationId && cs.nations[viewerNationId]
+        ? { [viewerNationId]: cs.nations[viewerNationId] }
+        : {};
+
+    const filteredCampaignCities: CampaignMatchState['cities'] = {};
+    for (const [cityId, city] of Object.entries(cs.cities)) {
+      if (viewerNationId && city.ownerNationId === viewerNationId) {
+        filteredCampaignCities[cityId] = city;
+      } else {
+        filteredCampaignCities[cityId] = {
+          ...city,
+          factory: 0,
+          office: 0,
+          reserve: 0,
+          jobs: [],
+        };
+      }
+    }
+
+    const filteredCampaignUnits: CampaignMatchState['units'] = {};
+    for (const [unitId, unit] of Object.entries(cs.units)) {
+      if (!viewerNationId) continue;
+      if (unit.ownerNationId === viewerNationId) {
+        filteredCampaignUnits[unitId] = unit;
+        if (publicFields.units[unitId]) {
+          filteredUnits[unitId] = publicFields.units[unitId];
+        }
+        continue;
+      }
+      const currentPos = interpolateCampaignUnitPosition(unit, state.currentUtc as number);
+      if (!observers.has(unit.ownerNationId) && !isPointObserved(currentPos)) {
+        continue;
+      }
       redactedUnitIds.push(unitId);
-      const { march: privateRoute, ...contact } = unit;
-      filteredUnits[unitId] = {
-        ...contact,
-        strengthFp: 0 as typeof unit.strengthFp,
-        readinessFp: 0 as typeof unit.readinessFp,
-        supplyFp: 0 as typeof unit.supplyFp,
+      filteredCampaignUnits[unitId] = {
+        ...unit,
+        position: currentPos,
+        trip: null,
+        rev: 0,
       };
-    } else {
-      filteredUnits[unitId] = unit;
+      const baseUnit = publicFields.units[unitId];
+      if (baseUnit) {
+        const { march: _privateRoute, ...contact } = baseUnit;
+        filteredUnits[unitId] = {
+          ...contact,
+          strengthFp: 0 as typeof baseUnit.strengthFp,
+          readinessFp: 0 as typeof baseUnit.readinessFp,
+          supplyFp: 0 as typeof baseUnit.supplyFp,
+        };
+      }
+    }
+
+    const filteredCampaignLog = cs.log.filter(
+      (entry) => entry.nationId === null || (viewerNationId !== null && entry.nationId === viewerNationId)
+    );
+
+    filteredCampaignState = {
+      ...cs,
+      nations: filteredCampaignNations,
+      cities: filteredCampaignCities,
+      units: filteredCampaignUnits,
+      log: filteredCampaignLog,
+    };
+  } else {
+    const visible = new Set(Object.values(state.regions).filter(r=>observers.has(r.controllerNationId)).map(r=>r.regionId));
+    for(const unit of Object.values(state.units)){
+      if(!observers.has(unit.ownerNationId))continue;
+      visible.add(unit.regionId);
+      for(const neighbor of state.regions[unit.regionId].adjacentRegionIds)visible.add(neighbor);
+    }
+    for (const [unitId, unit] of Object.entries(publicFields.units)) {
+      if(!viewerNationId || (unit.ownerNationId!==viewerNationId&&!visible.has(unit.regionId)))continue;
+      if (viewerNationId && unit.ownerNationId !== viewerNationId) {
+        redactedUnitIds.push(unitId);
+        const { march: privateRoute, ...contact } = unit;
+        filteredUnits[unitId] = {
+          ...contact,
+          strengthFp: 0 as typeof unit.strengthFp,
+          readinessFp: 0 as typeof unit.readinessFp,
+          supplyFp: 0 as typeof unit.supplyFp,
+        };
+      } else {
+        filteredUnits[unitId] = unit;
+      }
     }
   }
 
@@ -379,6 +486,7 @@ export function projectMatchForViewer(
     events: projectRoomEventsForViewer(publicFields.events, viewerNationId),
     ...(filteredLedger !== undefined ? { economicLedger: filteredLedger } : {}),
     ...(filteredPhase03 !== undefined ? { phase03Economy: filteredPhase03 } : {}),
+    ...(filteredCampaignState !== undefined ? { campaignState: filteredCampaignState } : {}),
     stateHash,
     viewerSlot,
     viewerNationId,

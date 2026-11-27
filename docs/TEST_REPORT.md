@@ -1,17 +1,20 @@
-# Kết quả kiểm thử ngày 27/11/2026
+# Kết quả kiểm thử ngày 27/11/2026 (Mốc T04 — Nghiên cứu, Huy động & Điều quân trên máy chủ)
 
-Sau khi đổi bản đồ mặc định, đã chạy lại TypeScript, build và đủ 50 bài hồi quy. Bộ trình duyệt mở trực tiếp trang chủ của bản build, thực hiện nghiên cứu, huy động, chọn quân và đổi đích trên cả ba kích thước. Hai phiên nhiều người chơi mở từ /rooms.html cũng vượt qua bộ kiểm thử ở 1440 và 390 px.
+Sau khi triển khai kịch bản phòng mạng `vietnam_campaign_v1` trên bản đồ Việt Nam mới ở trang chủ (`/`), đã chạy đầy đủ kiểm tra TypeScript, production build, toàn bộ 55 bài kiểm thử tự động (50 bài hồi quy + 5 bài tích hợp/khởi động lại/migration mới) và cả ba bộ kiểm thử trình duyệt Microsoft Edge thực tế.
 
-| Kiểm tra | Kết quả quan sát |
+| Kiểm tra | Kết quả thực chạy |
 |---|---|
-| TypeScript | Đạt khi chạy tsc --noEmit |
-| Build Vite | Đạt. Gói JavaScript chính khoảng 1,63 MB trước gzip. Có cảnh báo kích thước |
-| Hợp đồng, mô phỏng, máy chủ, bản đồ | 50/50 đạt. Bao gồm replay, clock, quyền, phòng, lệnh hành quân, chấp nhận và hết hạn hiệp ước |
-| Edge nhiều người chơi | Hai ngữ cảnh người dùng độc lập ở 1440 và 390 px. Tạo phòng, xây và hủy, hành quân và dừng, đề nghị và chấp nhận, kiểm tra liên hệ xuất hiện rồi mất khi chấm dứt. Không ghi nhận lỗi JavaScript trong luồng |
-| Edge chơi đơn | 1440×900, 390×844, 844×390. Nghiên cứu, hủy, mở khóa, huy động, chọn quân, đổi đích, dừng, tải lại và đến nơi đều đạt |
-| Đối chiếu giao diện | Đã có ảnh kết quả ở thư mục kiem-thu trong workspace. Chưa đo so sánh từng màn hình với client WW3 hiện hành |
-| Hiệu năng và bảo mật | Kiểm thử quyền và dữ liệu đã lọc theo phe. Chưa thử tải nhiều phòng, kiểm toán toàn bộ hoặc đo GPU thật |
+| TypeScript (`tsc --noEmit`) | **ĐẠT** (0 lỗi kiểu trên toàn bộ `src/`, `server.ts`, `scripts/`) |
+| Đóng gói & Production Build (`campaign/build.cjs` + `vite build`) | **ĐẠT**. `dist/index.html` ~1,86 MB (bản đồ Việt Nam mới có phòng mạng), `dist/rooms.html` + `dist/assets/rooms-*.js` ~1,64 MB (còn cảnh báo chunk > 500 kB của Vite) |
+| Bộ kiểm thử tự động (`bun test`, 9 tệp) | **55/55 ĐẠT** (0 lỗi). Gồm toàn bộ 50/50 bài hồi quy cũ (hợp đồng, mô phỏng, không `Date.now()`/`Math.random()`, SQLite, clock, phòng 1955, hành quân, đổi đích, hiệp ước tình báo, kinh tế P03) + 5/5 bài mới trong `src/server/vietnamCampaign.test.ts` (đối khớp 60 thành phố với `atlas.js`, nghiên cứu I/II + hủy hoàn tiền sàn theo thời gian còn lại, xây văn phòng + huy động sinh đúng 1 đơn vị mã ổn định, thiếu tài nguyên, thiếu điều kiện, gửi lặp idempotent, sở hữu/tầm nhìn/giữ kín hàng đợi, khởi động lại máy chủ giữa hàng đợi + replay SHA-256 + backup/restore, và migration DB từ bản `003` lên `004` giữ nguyên phòng 1955 cũ) |
+| Edge phòng mạng bản đồ Việt Nam mới (`scripts/campaign-online-browser-test.mts`) | **ĐẠT** trên cả 3 khung `1440×900` (desktop chuột), `390×844` (cảm ứng dọc), `844×390` (cảm ứng ngang). Hai phiên độc lập đăng ký tài khoản, tạo/vào phòng `vietnam_campaign_v1`, sẵn sàng và bắt đầu trên trang chủ `/`. Kiểm chứng nghiên cứu cấp I + hủy + làm lại, xây văn phòng tuyển dụng Đà Nẵng, tải lại trang giữa hàng đợi, huy động Bộ binh cơ giới, **tắt và khởi động lại máy chủ thật cùng tệp SQLite giữa hàng huy động**, xuất hiện đúng 1 quân `unt_vn_0001`, chọn quân từ bảng thành phố và từ quân hiệu trên bản đồ, di chuyển 32 giây, dừng giữa đường, đổi đích tới Hải Phòng, xác minh tài khoản thứ hai không nhìn thấy quân ở hậu phương, không nhận sự kiện hàng đợi đối phương qua WebSocket và bị máy chủ từ chối `403 FORBIDDEN_ACTION` khi thử điều khiển quân đối phương, hoàn tất cấp II rút lệnh mới còn 24 giây, khớp replay hash, 0 lỗi JS, 0 tràn ngang |
+| Edge chơi đơn bản đồ Việt Nam (`campaign/forces-test.cjs`) | **ĐẠT** trên cả 3 khung `1440×900`, `390×844`, `844×390`. Bản lưu IndexedDB chơi đơn và luồng chuyển đổi bản lưu cũ giữ nguyên |
+| Edge phòng mạng 1955 cũ (`scripts/room-browser-test.cjs`) | **ĐẠT** hồi quy ở `1440×900` và `390×844` trên `/rooms.html` (xây/hủy công trình, thuế trễ, hành quân, đổi đích, dừng, hiệp ước tình báo, 0 lỗi JS) |
+| Kiểm tra trực quan ảnh chụp màn hình | Đã xem trực tiếp `kiem-thu/online-vietnam-desktop.png`, `online-vietnam-doc.png`, `online-vietnam-ngang.png` và tinh chỉnh lại thanh tiêu đề + thanh lệnh cảm ứng để không chồng lấn ở khung `390×844` và `844×390` |
 
-Đã chạy lại bộ 50 bài và cả hai kích thước trình duyệt sau khi thêm lệnh đổi đích. Kiểm thử API xác nhận một đích không hợp lệ giữ nguyên mã băm của trận. Trình duyệt kiểm tra thao tác giữ tuyến cũ, xác nhận đích mới và dừng ở vùng hiện tại.
+## Phần chưa xác minh (NOT VERIFIED)
 
-Bộ trình duyệt phòng mạng tắt WebGL và dùng đường hiển thị dự phòng. Kết quả cảm ứng được đo trong trình duyệt giả lập. Kiểm thử chơi đơn dùng đồng hồ điều khiển được để đi qua các hàng đợi.
+- **Thiết bị di động thật & GPU thật:** Kiểm thử cảm ứng chạy trong Microsoft Edge giả lập (`hasTouch: true`, `390×844` và `844×390`), chưa đo trên điện thoại iOS/Android vật lý.
+- **Chạy đồng hồ thực đủ 45–65 giây không tua ở trình duyệt E2E:** Bộ E2E trình duyệt sử dụng `ManualClock` ở máy chủ (được tiêm qua `createServerRuntime`, không sửa logic mô phỏng) để kiểm chứng qua toàn bộ hàng đợi và khởi động lại máy chủ trong vòng ~20 giây thay vì chờ đồng hồ tường. Luồng polling 1 giây của `MatchClockScheduler` và auto-sync hạn hoàn thành đã nối vào `server.ts`, nhưng chưa chạy kiểm thử ngâm đồng hồ tường dài nhiều giờ.
+- **Kiểm thử tải nhiều phòng đồng thời & kiểm toán bảo mật đầy đủ (rate-limiting, fuzzing, pentest):** Chưa thực hiện ở mốc T04.
+- **Chiến đấu, chiếm đóng thành phố, điều kiện thắng bằng điểm, và cây công nghệ/quân chủng đầy đủ WW3:** Chưa thuộc phạm vi mốc T04; nằm ở các mốc tiếp theo sau khi nghiệm thu T04.

@@ -2,6 +2,7 @@ import {
   asFixedPoint,
   asUtcEpochMs,
   assertCompatibleSchemaVersion,
+  CampaignMatchState,
   Command,
   CONTRACT_SCHEMA_VERSION,
   DomainEvent,
@@ -45,6 +46,14 @@ import {
   settleNationReservation,
   settlePhase03OnRealtimeTick,
 } from './phase03Engine';
+import {
+  applyCampaignCancelCityProject,
+  applyCampaignCancelResearch,
+  applyCampaignMoveUnit,
+  applyCampaignStartCityProject,
+  applyCampaignStartResearch,
+  settleCampaignOnTick,
+} from './vietnamCampaignEngine';
 import { computePayloadDigest, computeStateHash } from './hash';
 import { assertSimulationInvariants, compareEventsDeterministically } from './invariants';
 import { nextSeededInt } from './rng';
@@ -262,7 +271,7 @@ export function reduceCommand(
   // Clone mutable working slices immutably (shallow copies of records we may update)
   const nextVersion = state.version + 1;
   let nations = { ...state.nations };
-  const units = { ...state.units };
+  let units = { ...state.units };
   const jobs = { ...state.jobs };
   const policies = { ...state.policies };
   const treaties = { ...state.treaties };
@@ -279,6 +288,7 @@ export function reduceCommand(
       ? []
       : undefined;
   let phase03Economy: Phase03EconomyState | undefined = state.phase03Economy;
+  let campaignState: CampaignMatchState | undefined = state.campaignState;
   let nextUtc: UtcEpochMs = nowUtc;
   let nextRngState = state.serverPrivate.rngState;
   const drafts: PendingEventDraft[] = [];
@@ -389,6 +399,9 @@ export function reduceCommand(
     case 'ORDER_MARCH':
     case 'REROUTE_MARCH':
     case 'HALT_MARCH': {
+      if (campaignState) {
+        return reject(state, 'INVALID_TARGET', 'Chiến dịch Việt Nam sử dụng lệnh điều quân CAMPAIGN_MOVE_UNIT.');
+      }
       const unit=units[payload.unitId];
       if(!unit || unit.ownerNationId!==actor.nationId) return reject(state,'FORBIDDEN_ACTION','Đơn vị không thuộc quyền chỉ huy.');
       if(payload.type==='HALT_MARCH'){
@@ -829,6 +842,16 @@ export function reduceCommand(
         phase03Economy = p03Tick.phase03Economy;
         nations = p03Tick.nations;
         for (const ev of p03Tick.events) {
+          drafts.push(ev);
+        }
+      }
+
+      // Modern Vietnam Campaign (vietnam_campaign_v1): settle due research, builds, mobilizations & unit arrivals
+      if (campaignState) {
+        const campaignTick = settleCampaignOnTick(campaignState, units, payload.targetUtc);
+        campaignState = campaignTick.campaignState;
+        units = campaignTick.units;
+        for (const ev of campaignTick.drafts) {
           drafts.push(ev);
         }
       }
@@ -1690,6 +1713,151 @@ export function reduceCommand(
       });
       break;
     }
+
+    // =========================================================================
+    // Modern Vietnam Campaign (vietnam_campaign_v1) — Research, City Build/Mobilize, Unit Orders
+    // =========================================================================
+
+    case 'CAMPAIGN_START_RESEARCH': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(
+          state,
+          'FORBIDDEN_ACTION',
+          `Actor "${actor.actorId}" cannot start research for "${payload.nationId}".`
+        );
+      }
+      if (!campaignState) {
+        return reject(state, 'INVALID_TARGET', 'Phòng đấu này không thuộc kịch bản chiến dịch Việt Nam.');
+      }
+      const outcome = applyCampaignStartResearch({
+        state: campaignState,
+        unitsRecord: units,
+        nationId: payload.nationId,
+        doctrineKey: payload.doctrineKey,
+        nowUtc,
+      });
+      if (!outcome.ok) {
+        return reject(state, outcome.code, outcome.reason);
+      }
+      campaignState = outcome.campaignState;
+      units = outcome.units;
+      for (const ev of outcome.drafts) drafts.push(ev);
+      break;
+    }
+
+    case 'CAMPAIGN_CANCEL_RESEARCH': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(
+          state,
+          'FORBIDDEN_ACTION',
+          `Actor "${actor.actorId}" cannot cancel research for "${payload.nationId}".`
+        );
+      }
+      if (!campaignState) {
+        return reject(state, 'INVALID_TARGET', 'Phòng đấu này không thuộc kịch bản chiến dịch Việt Nam.');
+      }
+      const outcome = applyCampaignCancelResearch({
+        state: campaignState,
+        unitsRecord: units,
+        nationId: payload.nationId,
+        doctrineKey: payload.doctrineKey,
+        expectedStartUtc: payload.expectedStartUtc,
+        nowUtc,
+      });
+      if (!outcome.ok) {
+        return reject(state, outcome.code, outcome.reason);
+      }
+      campaignState = outcome.campaignState;
+      units = outcome.units;
+      for (const ev of outcome.drafts) drafts.push(ev);
+      break;
+    }
+
+    case 'CAMPAIGN_START_CITY_PROJECT': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(
+          state,
+          'FORBIDDEN_ACTION',
+          `Actor "${actor.actorId}" cannot start city project for "${payload.nationId}".`
+        );
+      }
+      if (!campaignState) {
+        return reject(state, 'INVALID_TARGET', 'Phòng đấu này không thuộc kịch bản chiến dịch Việt Nam.');
+      }
+      const outcome = applyCampaignStartCityProject({
+        state: campaignState,
+        unitsRecord: units,
+        nationId: payload.nationId,
+        cityId: payload.cityId,
+        projectKey: payload.projectKey,
+        nowUtc,
+      });
+      if (!outcome.ok) {
+        return reject(state, outcome.code, outcome.reason);
+      }
+      campaignState = outcome.campaignState;
+      units = outcome.units;
+      for (const ev of outcome.drafts) drafts.push(ev);
+      break;
+    }
+
+    case 'CAMPAIGN_CANCEL_CITY_PROJECT': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(
+          state,
+          'FORBIDDEN_ACTION',
+          `Actor "${actor.actorId}" cannot cancel city project for "${payload.nationId}".`
+        );
+      }
+      if (!campaignState) {
+        return reject(state, 'INVALID_TARGET', 'Phòng đấu này không thuộc kịch bản chiến dịch Việt Nam.');
+      }
+      const outcome = applyCampaignCancelCityProject({
+        state: campaignState,
+        unitsRecord: units,
+        nationId: payload.nationId,
+        cityId: payload.cityId,
+        projectKey: payload.projectKey,
+        expectedStartUtc: payload.expectedStartUtc,
+        nowUtc,
+      });
+      if (!outcome.ok) {
+        return reject(state, outcome.code, outcome.reason);
+      }
+      campaignState = outcome.campaignState;
+      units = outcome.units;
+      for (const ev of outcome.drafts) drafts.push(ev);
+      break;
+    }
+
+    case 'CAMPAIGN_MOVE_UNIT': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(
+          state,
+          'FORBIDDEN_ACTION',
+          `Actor "${actor.actorId}" cannot issue unit orders for "${payload.nationId}".`
+        );
+      }
+      if (!campaignState) {
+        return reject(state, 'INVALID_TARGET', 'Phòng đấu này không thuộc kịch bản chiến dịch Việt Nam.');
+      }
+      const outcome = applyCampaignMoveUnit({
+        state: campaignState,
+        unitsRecord: units,
+        nationId: payload.nationId,
+        unitId: payload.unitId,
+        toCityId: payload.toCityId,
+        expectedRev: payload.expectedRev,
+        nowUtc,
+      });
+      if (!outcome.ok) {
+        return reject(state, outcome.code, outcome.reason);
+      }
+      campaignState = outcome.campaignState;
+      units = outcome.units;
+      for (const ev of outcome.drafts) drafts.push(ev);
+      break;
+    }
   }
 
   const sortedDrafts = sortPendingEventDrafts(drafts);
@@ -1742,6 +1910,7 @@ export function reduceCommand(
     ...(economicState ? { economicState } : {}),
     ...(economicLedger ? { economicLedger } : {}),
     ...(phase03Economy ? { phase03Economy } : {}),
+    ...(campaignState ? { campaignState } : {}),
     eventSequence: nextEventSeq,
     events: [...state.events, ...emittedEvents],
     idempotencyReceipts: {

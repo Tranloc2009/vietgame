@@ -91,6 +91,9 @@ document.addEventListener("visibilitychange", () => {
 function command(key, cancel, jobStart) {
   if (!selected) return;
   const city = selected.name;
+  if (typeof isOnline === "function" && isOnline()) {
+    return sendOnlineCityProject(city, key, cancel, jobStart);
+  }
   return commitOrder((s) => {
     if (
       cancel &&
@@ -121,6 +124,13 @@ async function commitOrder(mutate) {
   }
 }
 function refresh() {
+  if (typeof isOnline === "function" && isOnline()) {
+    live = buildOnlineLiveState();
+    maybeAutoSyncOnlineDeadlines();
+    renderMatch();
+    invalidate();
+    return;
+  }
   if (!saved) return;
   live = settle(structuredClone(saved), Date.now());
   renderMatch();
@@ -207,7 +217,11 @@ function renderCity(c) {
       "/ngày</b></div><div><small>Công trình</small><b>" +
       num(c.factory + c.office) +
       " cấp</b></div><div><small>Lực lượng</small><b>" +
-      num(live.units.filter((u) => u.city === selected.name).length) +
+      num(
+        live.units.filter(
+          (u) => u.city === selected.name && u.owned !== false,
+        ).length,
+      ) +
       ' đơn vị</b></div></div><p class="queueLine">' +
       (c.jobs.length
         ? c.jobs
@@ -293,9 +307,13 @@ function renderCity(c) {
 function renderMatch() {
   if (!live) return;
   const L = ledger(live);
-  $("#day").textContent =
-    "CHIẾN DỊCH · NGÀY " +
-    (1 + Math.floor((live.time - live.start) / 86400000));
+  const dayNum = 1 + Math.floor((live.time - live.start) / 86400000);
+  if (typeof isOnline === "function" && isOnline()) {
+    const slotLabel = mp.room.viewerSlot === "NORTH" ? "PHƯƠNG BẮC" : "PHƯƠNG NAM";
+    $("#day").textContent = slotLabel + " · NGÀY " + dayNum;
+  } else {
+    $("#day").textContent = "CHIẾN DỊCH · NGÀY " + dayNum;
+  }
   [...$("#resources").children].forEach((el, i) => {
     el.querySelector("strong").textContent = num(live.balance[i] / hour);
     el.querySelector("small").textContent =
@@ -310,9 +328,10 @@ function renderMatch() {
   });
   const c =
     selected && towns.includes(selected) ? live.cities[selected.name] : null;
-  $("#management").hidden = !c;
-  $("#selection").classList.toggle("managed", !!c);
-  if (c) {
+  const canManageCity = Boolean(c && c.owned !== false);
+  $("#management").hidden = !canManageCity;
+  $("#selection").classList.toggle("managed", canManageCity);
+  if (canManageCity && c) {
     for (const b of $("#cityTabs").children)
       b.setAttribute("aria-pressed", String(b.dataset.cityTab === cityTab));
     replaceContent(
@@ -320,7 +339,11 @@ function renderMatch() {
       renderCity(c) +
         (cityTab === "build"
           ? ""
-          : unitList(live.units.filter((u) => u.city === selected.name))),
+          : unitList(
+              live.units.filter(
+                (u) => u.city === selected.name && u.owned !== false,
+              ),
+            )),
     );
   }
   renderArmy();
@@ -331,9 +354,10 @@ function renderMatch() {
       title = "Nghiên cứu · Lục quân";
       html = studyHtml();
     } else if (nationalView === "units") {
-      title = "Đơn vị · " + live.units.length;
+      const ownUnits = live.units.filter((u) => u.owned !== false);
+      title = "Đơn vị · " + ownUnits.length;
       html =
-        unitList(live.units) ||
+        unitList(ownUnits) ||
         '<p class="emptyArmy">Chưa có đơn vị. Chọn thành phố để huy động.</p>';
     } else if (nationalView === "stock") {
       title = pickedMaterial < 0 ? "Kho quốc gia" : materials[pickedMaterial];
@@ -342,10 +366,12 @@ function renderMatch() {
       title = "Nhật ký sự kiện";
       html = '<ol class="eventList">' + logHtml() + "</ol>";
     } else {
-      title = "Thành phố · " + towns.length;
-      html = towns
-        .map((t, i) => {
-          const c = live.cities[t.name];
+      const townEntries = towns
+        .map((t, i) => ({ t, i, c: live.cities[t.name] }))
+        .filter(({ c }) => !live.online || c?.owned !== false);
+      title = (live.online ? "Thành phố của bạn · " : "Thành phố · ") + townEntries.length;
+      html = townEntries
+        .map(({ t, i, c }) => {
           return (
             '<button class="townRow" data-town="' +
             i +
@@ -394,10 +420,14 @@ for (const [selector, delta] of [
   ["#nextCity", 1],
 ])
   $(selector).onclick = () => {
-    const index = towns.indexOf(selected);
+    const pool =
+      typeof isOnline === "function" && isOnline()
+        ? towns.filter((t) => live?.cities?.[t.name]?.owned !== false)
+        : towns;
+    const index = pool.indexOf(selected);
     if (index >= 0)
       selectItem(
-        towns[(index + Number(delta) + towns.length) % towns.length],
+        pool[(index + Number(delta) + pool.length) % pool.length],
         true,
       );
   };
@@ -416,6 +446,9 @@ async function loadCampaign() {
     notice(
       "Trình duyệt không mở được bộ nhớ chiến dịch. Tiến độ chỉ giữ trong phiên này.",
     );
+  }
+  if (typeof restoreOnlineSession === "function") {
+    await restoreOnlineSession();
   }
   refresh();
   setInterval(refresh, 1000);

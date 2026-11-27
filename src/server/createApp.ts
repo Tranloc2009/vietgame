@@ -180,11 +180,16 @@ function checkCommandNationOwnership(
     case 'QUEUE_PRODUCTION':
     case 'CANCEL_PRODUCTION':
     case 'TOGGLE_FACILITY_PAUSE':
+    case 'CAMPAIGN_START_RESEARCH':
+    case 'CAMPAIGN_CANCEL_RESEARCH':
+    case 'CAMPAIGN_START_CITY_PROJECT':
+    case 'CAMPAIGN_CANCEL_CITY_PROJECT':
+    case 'CAMPAIGN_MOVE_UNIT':
       if (command.payload.nationId !== memberNationId) {
         return {
           ok: false,
           code: 'FORBIDDEN_NATION_IMPERSONATION',
-          reason: `Bạn chỉ có quyền thực hiện lệnh kinh tế/sản xuất cho "${memberNationId}", không thể mạo danh "${command.payload.nationId}".`,
+          reason: `Bạn chỉ có quyền thực hiện lệnh cho "${memberNationId}", không thể mạo danh "${command.payload.nationId}".`,
         };
       }
       return { ok: true };
@@ -365,6 +370,9 @@ export function createServerRuntime(
           });
 
           const roomRes = store.getRoomForUser(parsedMatchId.data, user.userId);
+          if (roomRes.ok && roomRes.room.status === 'ACTIVE' && roomRes.room.scenarioId === 'vietnam_campaign_v1') {
+            scheduler.catchUpMatchIfDue(parsedMatchId.data);
+          }
           const loaded = store.getMatch(parsedMatchId.data);
           if (!roomRes.ok || !loaded) {
             socket.send(
@@ -410,8 +418,11 @@ export function createServerRuntime(
             return;
           }
 
-          const loaded = store.getMatch(session.matchId);
           const roomRes = store.getRoomForUser(session.matchId, session.user.userId);
+          if (roomRes.ok && roomRes.room.status === 'ACTIVE' && roomRes.room.scenarioId === 'vietnam_campaign_v1') {
+            scheduler.catchUpMatchIfDue(session.matchId);
+          }
+          const loaded = store.getMatch(session.matchId);
           if (!loaded || !roomRes.ok) {
             socket.send(
               JSON.stringify({
@@ -879,6 +890,7 @@ export function createServerRuntime(
       creator: user,
       title: parsed.data.title,
       preferredSlot: parsed.data.preferredSlot,
+      scenarioId: parsed.data.scenarioId,
       nowUtc: clock.nowUtc(),
       mode: config.isProduction ? 'PRODUCTION_REALTIME' : 'PREVIEW_FIXTURE',
     });
@@ -990,6 +1002,10 @@ export function createServerRuntime(
       return;
     }
 
+    if (roomRes.room.status === 'ACTIVE' && roomRes.room.scenarioId === 'vietnam_campaign_v1') {
+      scheduler.catchUpMatchIfDue(parsedId.data);
+    }
+
     const loaded = store.getMatch(parsedId.data);
     if (!loaded) {
       res.status(404).json({
@@ -1010,6 +1026,7 @@ export function createServerRuntime(
         roomRes.room.viewerNationId
       ),
       snapshots: store.listSnapshots(parsedId.data),
+      serverUtc: clock.nowUtc(),
     });
   });
 
@@ -1276,6 +1293,7 @@ export function createServerRuntime(
       receipt: result.receipt,
       emittedEvents: result.emittedEvents,
       match: filteredView,
+      serverUtc: clock.nowUtc(),
     });
   });
 
@@ -1294,6 +1312,10 @@ export function createServerRuntime(
     if (!roomRes.ok) {
       res.status(roomRes.status).json({ ok: false, code: roomRes.code, reason: roomRes.reason });
       return;
+    }
+
+    if (roomRes.room.status === 'ACTIVE' && roomRes.room.scenarioId === 'vietnam_campaign_v1') {
+      scheduler.catchUpMatchIfDue(parsedId.data);
     }
 
     const loaded = store.getMatch(parsedId.data);

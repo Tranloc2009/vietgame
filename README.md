@@ -1,12 +1,12 @@
 # VIETNAM: THE DIVIDED NATION
 
-## Bàn giao cho Antigravity · 27/11/2026
+## Cập nhật mốc T04 · 27/11/2026 (Nghiên cứu, Huy động & Điều quân trên máy chủ)
 
-Mở [index.html](index.html) để chơi chiến dịch Việt Nam, hoặc chạy ứng dụng và mở trang chủ. Đây là bản đồ đã thử với 63 vùng theo bộ dữ liệu lịch sử và 60 điểm dân cư. Mã nguồn, dữ liệu địa lý và hướng dẫn đóng gói nằm trong [campaign](campaign/NGUON.md).
+Mở trang chủ `/` (hoặc mở trực tiếp [index.html](index.html) khi chơi ngoại tuyến) để chơi chiến dịch Việt Nam trên bản đồ mới gồm 63 vùng hành chính lịch sử và 60 điểm dân cư. Mã nguồn, dữ liệu địa lý và hướng dẫn đóng gói nằm trong [campaign](campaign/NGUON.md).
 
-**Luồng đã chạy trong bản chơi đơn:** nghiên cứu Bộ binh cơ giới I, xây văn phòng, huy động tại thành phố, chọn đơn vị, di chuyển, dừng hoặc đổi đích. Cấp II rút ngắn thời gian lệnh mới. Kho, công trình, quân và tiến độ được lưu bằng IndexedDB trên trình duyệt.
-
-**Phòng hai người** có đường vào riêng ở `/rooms.html` khi chạy máy chủ. Bản đồ 1955 đã được gỡ khỏi trang chủ. Phòng hiện dùng dữ liệu kịch bản 72 vùng với hành quân, đổi đích và chia sẻ tầm nhìn qua hiệp ước. Nối nghiên cứu và huy động của chiến dịch Việt Nam với máy chủ là [phần việc kế tiếp](docs/NEXT_TASK.md).
+- **Chơi đơn ngoại tuyến (IndexedDB):** giữ nguyên toàn bộ luồng nghiên cứu Bộ binh cơ giới I/II, xây xưởng & văn phòng tuyển dụng, huy động, chọn quân, di chuyển, dừng và đổi đích.
+- **Phòng hai người trên bản đồ Việt Nam mới (`vietnam_campaign_v1`):** bấm nút **Phòng mạng** ngay trên trang chủ `/` khi chạy máy chủ. Hai tài khoản độc lập đăng ký/đăng nhập, tạo hoặc vào phòng bằng mã mời, sẵn sàng và bắt đầu ngay trên bản đồ Việt Nam mới (chia cân bằng 30 thành phố Phương Bắc / 30 thành phố Phương Nam). Toàn bộ nghiên cứu, xây văn phòng tuyển dụng, huy động đơn vị (mã ổn định `unt_vn_0001`), di chuyển/dừng/đổi đích, kiểm tra quyền sở hữu và ẩn hàng đợi/lệnh đối phương đều chạy trên máy chủ SQLite + WebSocket và phục hồi nhất quán sau tải lại trang hoặc khởi động lại máy chủ.
+- **Phòng 1955 cũ (`/rooms.html`):** giữ nguyên kịch bản 72 vùng, dữ liệu, migration (`001`–`004`) và bộ hồi quy để đối chiếu hành vi. Chi tiết nghiệm thu nằm ở [báo cáo kiểm thử](docs/TEST_REPORT.md) và [mốc kế tiếp](docs/NEXT_TASK.md).
 
 ## Nền tảng phòng nhiều người chơi
 

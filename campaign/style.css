@@ -1101,16 +1101,30 @@ footer {
   font-size: 14px;
 }
 @media (max-width: 720px) {
+  .profile {
+    max-width: calc(100% - 172px);
+  }
+  .profile > div {
+    min-width: 0;
+  }
+  .profile small {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .commands {
     max-width: calc(100% - 12px);
     overflow: auto;
   }
   .commands button {
     flex-shrink: 0;
-    padding: 5px 6px;
+    padding: 5px 5px;
+    gap: 3px;
+    font-size: 10.5px;
   }
   .commands svg {
-    width: 13px;
+    width: 12px;
   }
   .commands {
     gap: 1px;
@@ -1123,6 +1137,18 @@ footer {
   }
 }
 @media (max-height: 460px) and (min-width: 721px) {
+  .profile {
+    max-width: 248px;
+  }
+  .profile > div {
+    min-width: 0;
+  }
+  .profile small {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .commands svg {
     display: none;
   }
@@ -1142,4 +1168,146 @@ footer {
     top: 138px;
   }
 }
+
+/* Phòng mạng chiến dịch Việt Nam */
+#menuOnline.onlineActive {
+  background: #486441;
+  color: #fff4c9;
+  border-color: #a6b479;
+}
+.armyPin.enemy {
+  background: #612c27;
+  border-color: #d79c8e;
+  color: #ffe3d7;
+}
+#mpBody {
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: #708469 #26342f;
+  padding: 10px 12px;
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+}
+.mpTabs {
+  display: flex;
+  gap: 3px;
+}
+.mpTabs button {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.mpTabs button[aria-pressed="true"] {
+  background: #536449;
+  color: #faf0c6;
+  border-color: #8f9a75;
+}
+.mpField {
+  display: grid;
+  gap: 4px;
+}
+.mpField label {
+  font-size: 11px;
+  color: #c8cfb8;
+}
+.mpField input,
+.mpField select {
+  width: 100%;
+  background: #1d2723;
+  color: #f4f1df;
+  border: 1px solid #60705f;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.mpRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.mpBox {
+  background: #1f2b26;
+  border: 1px solid #526253;
+  padding: 8px 10px;
+  display: grid;
+  gap: 7px;
+}
+.mpBox h3 {
+  margin: 0;
+  font-size: 13px;
+  color: #e6dfb9;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.mpBtnPrimary {
+  background: #556a46;
+  color: #fff6cf;
+  padding: 7px 10px;
+  font-weight: 600;
+}
+.mpBtnPrimary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.mpBtnSmall {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.mpCode {
+  font: 700 13px Consolas, monospace;
+  color: #ffe388;
+  background: #16201c;
+  border: 1px solid #6c7a62;
+  padding: 3px 6px;
+  user-select: all;
+}
+.mpSlot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 7px;
+  background: #27352f;
+  border: 1px solid #4e5e4f;
+  font-size: 12px;
+}
+.mpTag {
+  font: 700 10px Consolas, monospace;
+  padding: 2px 5px;
+  background: #3d4d3e;
+  color: #d9e0c7;
+  border: 1px solid #6a7b67;
+}
+.mpTag.ready {
+  background: #48633e;
+  color: #f6efc6;
+  border-color: #93a773;
+}
+.mpError {
+  background: #582d28;
+  color: #ffe2d8;
+  border: 1px solid #a9695e;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.mpMuted {
+  color: #b7c0ab;
+  font-size: 12px;
+  margin: 0;
+}
+.mpRoomItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.mpFootLink {
+  color: #c7d0b6;
+  font-size: 11px;
+  text-decoration: underline;
+}
+
 

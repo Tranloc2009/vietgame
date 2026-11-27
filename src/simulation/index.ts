@@ -5,4 +5,5 @@ export * from './invariants';
 export * from './economy';
 export * from './phase03Catalog';
 export * from './phase03Engine';
+export * from './vietnamCampaignEngine';
 export * from './reducer';

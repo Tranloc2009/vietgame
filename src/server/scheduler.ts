@@ -14,6 +14,7 @@ import { SqliteMatchStore } from './db/sqliteStore';
 
 export interface SchedulerOptions {
   readonly tickIntervalMs?: number;
+  readonly pollIntervalMs?: number;
   readonly leaseDurationMs?: number;
   readonly maxBatchesPerMatch?: number;
   readonly workerOwnerId?: string;
@@ -44,6 +45,7 @@ export class MatchClockScheduler {
   private readonly store: SqliteMatchStore;
   private readonly clock: SimulationClock;
   private readonly tickIntervalMs: number;
+  private readonly pollIntervalMs: number;
   private readonly leaseDurationMs: number;
   private readonly maxBatchesPerMatch: number;
   private readonly workerOwnerId: string;
@@ -54,6 +56,7 @@ export class MatchClockScheduler {
     this.store = store;
     this.clock = clock;
     this.tickIntervalMs = options?.tickIntervalMs ?? 60_000;
+    this.pollIntervalMs = options?.pollIntervalMs ?? Math.min(this.tickIntervalMs, 1_000);
     this.leaseDurationMs = options?.leaseDurationMs ?? 30_000;
     this.maxBatchesPerMatch = options?.maxBatchesPerMatch ?? 10;
     this.workerOwnerId =
@@ -67,7 +70,7 @@ export class MatchClockScheduler {
     this.runCatchUpCycle();
     this.timer = setInterval(() => {
       this.runCatchUpCycle();
-    }, this.tickIntervalMs);
+    }, this.pollIntervalMs);
     this.timer.unref?.();
   }
 
@@ -111,6 +114,22 @@ export class MatchClockScheduler {
     return { processedMatches, executedTicks, skippedLockedMatches };
   }
 
+  public catchUpMatchIfDue(matchId: MatchId): number {
+    const nowUtc = this.clock.nowUtc();
+    const locked = this.store.acquireMatchWorkerLock(
+      matchId,
+      this.workerOwnerId,
+      nowUtc,
+      this.leaseDurationMs
+    );
+    if (!locked) return 0;
+    try {
+      return this.processMatchBounded(matchId);
+    } finally {
+      this.store.releaseMatchWorkerLock(matchId, this.workerOwnerId);
+    }
+  }
+
   private processMatchBounded(matchId: MatchId): number {
     let executed = 0;
 
@@ -152,6 +171,23 @@ export class MatchClockScheduler {
             if (fac && fac.operationalStatus === 'ACTIVE') {
               considerDeadline(order.completesAtUtc as number);
             }
+          }
+        }
+      }
+      if (state.campaignState) {
+        for (const nation of Object.values(state.campaignState.nations)) {
+          if (nation.study) {
+            considerDeadline(nation.study.endUtc as number);
+          }
+        }
+        for (const city of Object.values(state.campaignState.cities)) {
+          for (const job of city.jobs) {
+            considerDeadline(job.endUtc as number);
+          }
+        }
+        for (const unit of Object.values(state.campaignState.units)) {
+          if (unit.trip) {
+            considerDeadline(unit.trip.endUtc as number);
           }
         }
       }

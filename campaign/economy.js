@@ -53,9 +53,11 @@ function ledger(s) {
   const income = materials.map(() => 0),
     expense = materials.map(() => 0);
   for (const c of Object.values(s.cities)) {
+    if (c.owned === false) continue;
     cityOutput(c).forEach((v, i) => (income[i] += v));
   }
   for (const unit of s.units) {
+    if (unit.owned === false) continue;
     expense[0]++;
     expense[6] += unit.key === "motor" ? 3 : 2;
   }
