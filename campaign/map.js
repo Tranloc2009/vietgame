@@ -63,6 +63,7 @@ function resize() {
   dpr = Math.min(devicePixelRatio || 1, 2);
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
+  if (typeof unit3dBridge !== "undefined") unit3dBridge.resize(w, h, dpr);
   constrain();
   invalidate();
 }
@@ -337,6 +338,11 @@ function draw() {
     camera.z >= 8;
   /** @type {HTMLButtonElement} */ (document.querySelector("#minus")).disabled =
     camera.z <= 1;
+  if (typeof unit3dBridge !== "undefined") {
+    unit3dBridge.drawFallbackEffects2D(ctx);
+    unit3dBridge.renderFrame();
+    unit3dBridge.ensureAnimated();
+  }
   if(typeof drawUnits==="function" && document.readyState!=="loading")drawUnits();
   drawMini();
 }

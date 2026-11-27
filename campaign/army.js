@@ -14,18 +14,41 @@ function unitList(units) {
   return units
     .map((u) => {
       const st = unitStats[u.key] || unitStats.reserve;
+      const hpPct =
+        u.hp !== undefined && u.maxHp
+          ? Math.max(0, Math.min(100, Math.round((u.hp / u.maxHp) * 100)))
+          : 100;
       const hpStr =
         u.hp !== undefined && u.maxHp !== undefined
           ? " · " + u.hp + "/" + u.maxHp + " HP"
           : "";
+      const fac =
+        typeof unit3dBridge !== "undefined"
+          ? unit3dBridge.resolveUnitFaction(u)
+          : "NORTH";
+      const learnedList = live?.learned || [];
+      const thumb =
+        typeof unit3dBridge !== "undefined"
+          ? '<img class="unitRowThumb" alt="" src="' +
+            unit3dBridge.getPortraitUrl(u.key, fac, u.owned === false ? [] : learnedList) +
+            '">'
+          : "";
+      const modelSub =
+        typeof unit3dBridge !== "undefined"
+          ? unit3dBridge.getModelDisplayName(u.key, fac, u.owned === false ? [] : learnedList)
+          : "";
       return (
         '<button class="unitRow" data-select-unit="' +
         u.id +
-        '"><strong>' +
+        '">' +
+        thumb +
+        '<div class="unitRowMain"><strong>' +
         st.glyph +
         " " +
         unitTitle(u) +
-        "</strong><span>" +
+        "</strong>" +
+        (modelSub ? '<small class="unitModelSub">' + escapeText(modelSub) + "</small>" : "") +
+        "</div><span class=\"unitRowMeta\">" +
         escapeText(
           (u.inCombat
             ? "⚔ Giao tranh"
@@ -33,7 +56,11 @@ function unitList(units) {
               ? "→ " + u.trip.to
               : u.city || "Đã dừng") + hpStr,
         ) +
-        "</span></button>"
+        '<span class="miniHpTrack"><i class="' +
+        (hpPct < 35 ? "hpLow" : hpPct < 65 ? "hpMid" : "hpHigh") +
+        '" style="width:' +
+        hpPct +
+        '%"></i></span></span></button>'
       );
     })
     .join("");
@@ -236,7 +263,26 @@ function renderArmy() {
     : isStacked
       ? "Đạo quân hợp thành (" + stackMembers.length + " đơn vị · " + hpText + ")"
       : unitTitle(unit) + (hpText ? " (" + hpText + ")" : "");
-  $("#armyInfo").textContent = isEnemy
+
+  const fac =
+    typeof unit3dBridge !== "undefined"
+      ? unit3dBridge.resolveUnitFaction(unit)
+      : "NORTH";
+  const learnedForUnit = isEnemy ? [] : live?.learned || [];
+  const portraitSrc =
+    typeof unit3dBridge !== "undefined"
+      ? unit3dBridge.getPortraitUrl(unit.key, fac, learnedForUnit)
+      : "";
+  const modelLabel =
+    typeof unit3dBridge !== "undefined"
+      ? unit3dBridge.getModelDisplayName(unit.key, fac, learnedForUnit)
+      : "";
+  const hpPct =
+    totalHp !== undefined && totalMaxHp
+      ? Math.max(0, Math.min(100, Math.round((totalHp / totalMaxHp) * 100)))
+      : 100;
+  const hpClass = hpPct < 35 ? "hpLow" : hpPct < 65 ? "hpMid" : "hpHigh";
+  const statusLine = isEnemy
     ? "Liên hệ trinh sát đối phương" +
       (hpText ? " · " + hpText : "") +
       (unit.city ? " tại " + unit.city : "") +
@@ -256,6 +302,42 @@ function renderArmy() {
           : (unit.city ? "Đóng quân tại " + unit.city : "Đã dừng trên đường") +
             (isStacked ? " · Đang chọn " + unitTitle(unit) : "") +
             statMeta;
+
+  const armyInfoHtml =
+    '<div class="armyCardWrap">' +
+    (portraitSrc
+      ? '<div class="armyPortraitBox ' +
+        (fac === "NORTH" ? "facNorth" : "facSouth") +
+        '"><img class="unitPortrait" alt="' +
+        escapeText(modelLabel || unitTitle(unit)) +
+        '" src="' +
+        portraitSrc +
+        '"><span class="portraitFactionTag">' +
+        (fac === "NORTH" ? "BẮC" : "NAM") +
+        "</span></div>"
+      : "") +
+    '<div class="armyCardMeta">' +
+    (modelLabel
+      ? '<div class="armyModelLine"><strong>' +
+        escapeText(modelLabel) +
+        "</strong>" +
+        (unit.key === "motor" && learnedForUnit.includes("motor2")
+          ? ' <span class="tierBadge">Cấp II</span>'
+          : "") +
+        "</div>"
+      : "") +
+    '<div class="armyHpBar"><i class="' +
+    hpClass +
+    '" style="width:' +
+    hpPct +
+    '%"></i><span>' +
+    escapeText(hpText || "HP 100%") +
+    (hpPct < 65 ? " · Bị thương" : "") +
+    "</span></div>" +
+    '<div class="armyStatusText">' +
+    escapeText(statusLine) +
+    "</div></div></div>";
+  replaceContent($("#armyInfo"), armyInfoHtml);
   $("#move").hidden = isEnemy;
   $("#halt").hidden = isEnemy;
   $("#move").textContent = choosingDestination
@@ -280,31 +362,63 @@ function renderArmy() {
     splitBtn.hidden = !isStacked;
   }
 }
-const routeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg"),
-  routeLine = document.createElementNS(routeSvg.namespaceURI, "polyline");
+const SVG_NS = "http://www.w3.org/2000/svg";
+const routeSvg = document.createElementNS(SVG_NS, "svg"),
+  routeLine = document.createElementNS(SVG_NS, "polyline"),
+  routeDestRing = document.createElementNS(SVG_NS, "circle");
 routeSvg.classList.add("routeOverlay");
-routeSvg.append(routeLine);
+routeSvg.innerHTML =
+  '<defs>' +
+  '<marker id="routeArrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1 L 10 5 L 0 9 z" fill="#ffdf7a"/></marker>' +
+  '<marker id="routeArrowWar" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1 L 10 5 L 0 9 z" fill="#ff6a52"/></marker>' +
+  '<marker id="routeArrowAir" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1 L 10 5 L 0 9 z" fill="#7fd0ff"/></marker>' +
+  '<marker id="routeArrowNaval" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 1 L 10 5 L 0 9 z" fill="#67e3d4"/></marker>' +
+  "</defs>";
+routeDestRing.setAttribute("r", "8");
+routeDestRing.classList.add("routeDestRing");
+routeSvg.append(routeLine, routeDestRing);
 $("#unitMarkers").append(routeSvg);
 const pins = new Map();
 function drawUnits() {
   if (!live) return;
   const groups = new Map(),
-    now = simNow();
+    now = simNow(),
+    show3d = typeof unit3dBridge !== "undefined" && unit3dBridge.is3DVisibleNow();
   let route = false;
   for (const u of live.units) {
     const pos = pointAt(u, now),
       [x, y] = projectPoint(pos.lon, pos.lat);
     if (u.id === activeUnit && u.trip && u.owned !== false) {
       const points = [pos, ...travelSegment(u, now).remaining];
+      const screenPts = points.map((p) => projectPoint(p.lon, p.lat));
       routeLine.setAttribute(
         "points",
-        points.map((p) => projectPoint(p.lon, p.lat).join(",")).join(" "),
+        screenPts.map((pt) => pt.join(",")).join(" "),
       );
+      const destPt = screenPts[screenPts.length - 1];
+      if (destPt) {
+        routeDestRing.setAttribute("cx", String(destPt[0]));
+        routeDestRing.setAttribute("cy", String(destPt[1]));
+      }
       const destOwned = live?.cities?.[u.trip.to]?.owned !== false;
+      const domain = (unitStats[u.key] || unitStats.reserve).domain;
       routeLine.classList.toggle("assault", !destOwned);
+      routeLine.classList.toggle("airRoute", destOwned && domain === "AIR");
+      routeLine.classList.toggle("navalRoute", destOwned && domain === "NAVAL");
+      routeDestRing.classList.toggle("assault", !destOwned);
+      routeLine.setAttribute(
+        "marker-end",
+        !destOwned
+          ? "url(#routeArrowWar)"
+          : domain === "AIR"
+            ? "url(#routeArrowAir)"
+            : domain === "NAVAL"
+              ? "url(#routeArrowNaval)"
+              : "url(#routeArrow)",
+      );
       route = true;
     }
-    if (x < -35 || x > w + 35 || y < -35 || y > h + 35) continue;
+    if (x < -45 || x > w + 45 || y < -45 || y > h + 45) continue;
     const ownerTag = u.owned === false ? "enemy:" : "own:";
     const key = u.city
       ? ownerTag + "city:" + u.city
@@ -316,12 +430,22 @@ function drawUnits() {
         x,
         y,
         enemy: u.owned === false,
+        faction:
+          typeof unit3dBridge !== "undefined"
+            ? unit3dBridge.resolveUnitFaction(u)
+            : u.owned === false
+              ? "SOUTH"
+              : "NORTH",
         fighting: false,
         stacked: false,
+        hp: 0,
+        maxHp: 0,
         units: [],
       });
     const grp = groups.get(key);
     grp.units.push(u);
+    grp.hp += u.hp ?? 20;
+    grp.maxHp += u.maxHp ?? 20;
     if (u.inCombat) grp.fighting = true;
     if (u.stackId) grp.stacked = true;
   }
@@ -341,11 +465,25 @@ function drawUnits() {
     }
     const members = g.units,
       sel = members.findIndex((u) => u.id === activeUnit);
-    const first = members[0];
+    const first = sel >= 0 ? members[sel] : members[0];
     const firstGlyph = (unitStats[first.key] || unitStats.reserve).glyph;
     const firstLabel = first.displayNumber ?? first.id;
-    btn.textContent =
-      firstGlyph + " " + (members.length > 1 ? "×" + members.length : firstLabel);
+    const hpPct = g.maxHp > 0 ? Math.max(0, Math.min(100, Math.round((g.hp / g.maxHp) * 100))) : 100;
+    const hpCls = hpPct < 35 ? "hpLow" : hpPct < 65 ? "hpMid" : "hpHigh";
+    const labelStr = firstGlyph + " " + (members.length > 1 ? "×" + members.length : firstLabel);
+    const pinHtml =
+      '<span class="pinPlate"><span class="pinLabel">' +
+      (g.fighting ? "⚔ " : "") +
+      labelStr +
+      '</span><span class="pinHp"><i class="' +
+      hpCls +
+      '" style="width:' +
+      hpPct +
+      '%"></i></span></span>';
+    if (btn._pinHtml !== pinHtml) {
+      btn.innerHTML = pinHtml;
+      btn._pinHtml = pinHtml;
+    }
     btn.title = members
       .map(
         (m) =>
@@ -356,15 +494,16 @@ function drawUnits() {
       )
       .join(", ");
     btn.setAttribute("aria-label", "Chọn quân: " + btn.title);
-    btn.style.transform =
-      "translate(" +
-      Math.round(g.x - 13) +
-      "px," +
-      Math.round(g.y - 29) +
-      "px)";
+    btn.style.transform = show3d
+      ? "translate(" + Math.round(g.x - 24) + "px," + Math.round(g.y - 16) + "px)"
+      : "translate(" + Math.round(g.x - 19) + "px," + Math.round(g.y - 31) + "px)";
+    btn.classList.toggle("pin3d", show3d);
     btn.classList.toggle("active", sel >= 0);
     btn.classList.toggle("enemy", g.enemy);
+    btn.classList.toggle("facNorth", g.faction === "NORTH");
+    btn.classList.toggle("facSouth", g.faction === "SOUTH");
     btn.classList.toggle("fighting", g.fighting);
+    btn.classList.toggle("damaged", hpPct < 65);
     btn.classList.toggle("stacked", g.stacked && members.length > 1);
     btn.onclick = () => chooseCounter(members[(sel + 1) % members.length].id);
   }
@@ -460,6 +599,10 @@ canvas.addEventListener("contextmenu", (e) => {
   if (towns.includes(t)) sendMove(t.name);
 });
 setInterval(() => {
-  if (!document.hidden && live?.units.some((u) => u.trip)) drawUnits();
+  if (!document.hidden && live?.units.some((u) => u.trip)) {
+    drawUnits();
+    if (typeof unit3dBridge !== "undefined") unit3dBridge.ensureAnimated();
+  }
 }, 100);
+if (typeof unit3dBridge !== "undefined") unit3dBridge.init();
 loadCampaign();

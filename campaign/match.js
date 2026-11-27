@@ -396,11 +396,32 @@ function renderCity(c) {
             curLv +
             "</button>"
         : "";
+      const viewerFac =
+        typeof unit3dBridge !== "undefined"
+          ? unit3dBridge.resolveViewerFaction()
+          : "NORTH";
+      const offerThumb =
+        lane === "mobilize" && typeof unit3dBridge !== "undefined"
+          ? '<img class="offerThumb" alt="' +
+            escapeText(unit3dBridge.getModelDisplayName(key, viewerFac, live.learned)) +
+            '" src="' +
+            unit3dBridge.getPortraitUrl(key, viewerFac, live.learned) +
+            '">'
+          : "";
+      const modelTag =
+        lane === "mobilize" && typeof unit3dBridge !== "undefined"
+          ? '<span class="offerModelTag">' +
+            escapeText(unit3dBridge.getModelDisplayName(key, viewerFac, live.learned)) +
+            "</span>"
+          : "";
       return (
-        '<div class="offer"><div><strong>' +
+        '<div class="offer">' +
+        offerThumb +
+        '<div><strong>' +
         p.label +
         (lane === "build" ? " · Cấp " + t.level : "") +
         "</strong>" +
+        modelTag +
         subNote +
         '<div class="cost">' +
         cost +
