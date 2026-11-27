@@ -23,3 +23,9 @@
 - Kiểm thử trình duyệt di động (`390×844`, `375×667`, `844×390`) được thực hiện bằng Chromium mobile viewport emulation (Playwright); môi trường Linux container không có trình duyệt Safari/WebKit hay thiết bị iPhone vật lý.
 
 
+
+## Bản làm việc — xem trước tuyến và trạng thái bản đồ
+
+Bắt đầu từ `c3ea772` (P02-06) và giữ nguyên các ID nhiệm vụ. Phòng đã bắt đầu có thể xem trước tuyến của đơn vị cùng phe từ bảng khu vực. Máy chủ tính thời gian trên các cạnh kịch bản trong lãnh thổ cùng phe, dùng 10 phút/cạnh làm chuẩn thử nghiệm, nhân hệ số địa hình đích và hành lang nếu có. Kết quả chỉ đọc, tính theo giờ máy chủ, không ghi lệnh hoặc thay đổi hash. Không có migration. Bộ kiểm thử tích hợp xác nhận quyền, ETA, kết quả lặp lại và state hash.
+
+Bản đồ WebGL chỉ báo sẵn sàng khi có polygon vùng đã render. Khi các lớp vùng chưa xuất hiện, hiển thị trạng thái tải và chuyển sang SVG sau 12 giây. Inspector, chế độ lớp và dữ liệu địa lý hiện có vẫn dùng cùng hợp đồng. Điều phối lệnh di chuyển bền vững và ETA thực tế thuộc milestone tiếp theo.

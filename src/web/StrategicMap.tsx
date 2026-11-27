@@ -54,6 +54,7 @@ import {
   getActiveMapLayerDescriptor,
 } from './mapLayerRegistry';
 import { WorldMapFeature, WorldMapGeoJson, WorldMapLayers } from './roomApi';
+import type { LoadMovementPreview } from './components/MovementPreviewPanel';
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -71,6 +72,7 @@ export interface StrategicMapProps {
   readonly onToggleFullscreen?: () => void;
   readonly onScheduleRegionAction?: (regionId: string) => void;
   readonly actionBusy?: boolean;
+  readonly loadMovementPreview?: LoadMovementPreview;
 }
 
 const SEA_LABELS: readonly { key: string; text: string; coords: readonly [number, number] }[] = [
@@ -151,6 +153,7 @@ export function StrategicMap({
   onToggleFullscreen = () => {},
   onScheduleRegionAction,
   actionBusy,
+  loadMovementPreview,
 }: StrategicMapProps) {
   // Active Map Mode (switching mode NEVER resets camera or selection)
   const [layer, setLayer] = useState<MapLayerMode>('POLITICAL');
@@ -199,6 +202,7 @@ export function StrategicMap({
   const mapInstanceRef = useRef<maplibregl.Map | null>(null);
   const hoveredFeatureIdRef = useRef<string | number | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [landReady, setLandReady] = useState(false);
 
   const graphicsConfig = GRAPHICS_PRESETS[graphicsPreset];
   const activeLayerDesc = getActiveMapLayerDescriptor(layer);
@@ -616,6 +620,25 @@ export function StrategicMap({
     canvas.addEventListener('webglcontextlost', handleContextLost);
 
     let loaded = false;
+    let landTimeout: number | undefined;
+    const clearLandTimeout = () => {
+      if (landTimeout !== undefined) window.clearTimeout(landTimeout);
+    };
+    const markLandReady = () => {
+      if (!map.getLayer('vdn-regions-fill')) return;
+      const regions = map.queryRenderedFeatures({ layers: ['vdn-regions-fill'] });
+      if (regions.length === 0) return;
+      clearLandTimeout();
+      map.off('render', markLandReady);
+      setLandReady(true);
+    };
+
+    map.on('render', markLandReady);
+    landTimeout = window.setTimeout(() => {
+      setRenderMode('svg-fallback');
+      setFallbackReason('Các lớp lãnh thổ chưa hiển thị; đã chuyển sang bản đồ vector dự phòng.');
+    }, 12_000);
+
     map.on('error', () => {
       if (!loaded) {
         setRenderMode('svg-fallback');
@@ -1177,6 +1200,8 @@ export function StrategicMap({
     return () => {
       if (resizeTimer !== null) window.clearTimeout(resizeTimer);
       ro.disconnect();
+      clearLandTimeout();
+      setLandReady(false);
       canvas.removeEventListener('webglcontextlost', handleContextLost);
       setMapReady(false);
       map.remove();
@@ -1199,6 +1224,11 @@ export function StrategicMap({
 
     const citySrc = map.getSource('vdn-cities') as maplibregl.GeoJSONSource | undefined;
     citySrc?.setData(citiesGeoJson);
+  }, [mapReady, enrichedGeoJson, dynamicBorders, citiesGeoJson]);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !mapReady) return;
 
     // Blend political/mode overlay opacity so terrain stays legible
     if (map.getLayer('vdn-regions-fill')) {
@@ -1257,9 +1287,6 @@ export function StrategicMap({
       map.easeTo({ pitch: 0, duration: 240 });
     }
   }, [
-    enrichedGeoJson,
-    dynamicBorders,
-    citiesGeoJson,
     activeLayerDesc.terrainBlendOpacity,
     layer,
     graphicsConfig,
@@ -1504,6 +1531,7 @@ export function StrategicMap({
     <div
       data-testid="strategic-map-stage"
       data-render-mode={renderMode}
+      data-map-ready={renderMode === 'svg-fallback' || landReady}
       data-map-layer={layer}
       data-graphics-preset={graphicsPreset}
       data-semantic-zoom={zoomDescriptor.code}
@@ -1534,6 +1562,15 @@ export function StrategicMap({
                 data-testid="maplibre-canvas"
                 className="h-full w-full"
               />
+
+              {!landReady && (
+                <div
+                  role="status"
+                  className="absolute inset-0 z-10 grid place-items-center bg-[#1F3545] px-6 text-center text-sm text-[#EFE9DC]"
+                >
+                  Đang vẽ ranh giới và vùng chiến lược…
+                </div>
+              )}
 
               {/* Cosmetic-Only Weather/Atmosphere Surface Adapter (Zero gameplay impact) */}
               {weatherConfig.enabled &&
@@ -1793,6 +1830,7 @@ export function StrategicMap({
               featuresById={featuresById}
               onScheduleRegionAction={onScheduleRegionAction}
               actionBusy={actionBusy}
+              loadMovementPreview={loadMovementPreview}
             />
 
             {/* Bottom-Left: Lightweight Expandable Minimap (Desktop/Tablet only) */}

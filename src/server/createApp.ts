@@ -24,6 +24,8 @@ import {
   PublicUser,
   REALTIME_SECONDS_PER_GAME_DAY,
   RegisterPayloadSchema,
+  RegionIdSchema,
+  UnitIdSchema,
   SIMULATION_ENGINE_VERSION,
   ToggleReadyPayloadSchema,
 } from '../contracts';
@@ -33,6 +35,11 @@ import { SimulationClock } from '../simulation';
 import { ServerConfig } from './config';
 import { SqliteMatchStore } from './db/sqliteStore';
 import { MatchClockScheduler } from './scheduler';
+import { planMovementRoute } from '../simulation/movementRoute';
+
+const movementTerrainCosts = new Map<string, number>(WORLD_MAP_72_GEOJSON.features.map(({ properties }) => [
+  properties.regionId, properties.movementCostFp,
+]));
 
 export interface ServerRuntime {
   readonly app: Express;
@@ -952,6 +959,56 @@ export function createServerRuntime(
         roomRes.room.viewerNationId
       ),
       snapshots: store.listSnapshots(parsedId.data),
+    });
+  });
+
+  // Read-only estimate for the player’s own unit in an active room.
+  app.get('/api/rooms/:matchId/movement-preview', (req: Request, res: Response) => {
+    res.set('Cache-Control', 'no-store');
+    const user = requireAuthenticatedUser(req, res);
+    if (!user) return;
+
+    const matchId = MatchIdSchema.safeParse(req.params.matchId);
+    const unitId = UnitIdSchema.safeParse(req.query.unitId);
+    const destination = RegionIdSchema.safeParse(req.query.destinationId);
+    if (!matchId.success || !unitId.success || !destination.success) {
+      res.status(400).json({ ok: false, code: 'INVALID_MOVEMENT_PREVIEW', reason: 'Đơn vị hoặc đích không hợp lệ.' });
+      return;
+    }
+
+    const access = store.getRoomForUser(matchId.data, user.userId);
+    if (!access.ok) {
+      res.status(access.status).json({ ok: false, code: access.code, reason: access.reason });
+      return;
+    }
+    if (access.room.status !== 'ACTIVE' || !access.room.viewerNationId) {
+      res.status(409).json({ ok: false, code: 'MATCH_NOT_ACTIVE', reason: 'Chỉ xem trước tuyến trong trận đang diễn ra.' });
+      return;
+    }
+
+    const state = store.getMatch(matchId.data)?.state;
+    const unit = state?.units[unitId.data];
+    if (!state || !unit || unit.ownerNationId !== access.room.viewerNationId) {
+      res.status(404).json({ ok: false, code: 'UNIT_NOT_AVAILABLE', reason: 'Đơn vị không khả dụng.' });
+      return;
+    }
+    const route = planMovementRoute(
+      state.regions, movementTerrainCosts, WORLD_GEO_LAYERS.transportCorridors,
+      unit.regionId, destination.data, unit.ownerNationId
+    );
+    if (!route) {
+      res.status(422).json({ ok: false, code: 'NO_MOVEMENT_ROUTE', reason: 'Không có tuyến hợp lệ qua vùng đang kiểm soát.' });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      originId: unit.regionId,
+      destinationId: destination.data,
+      matchVersion: state.version,
+      estimatedArrivalUtc: Math.max(clock.nowUtc(), state.currentUtc) + route.durationMs,
+      durationMs: route.durationMs,
+      regions: route.regionIds.map((id) => ({ id, name: state.regions[id].name })),
     });
   });
 

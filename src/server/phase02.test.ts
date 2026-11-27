@@ -87,6 +87,66 @@ function waitForWsMessage(
 }
 
 describe('Phase 02 Integration — Rooms, Persistence/Clock, and Live Filtered Sync', () => {
+  it('previews an authoritative friendly route without applying a move or exposing another unit', async () => {
+    const clock = new ManualClock(1_750_000_000_000);
+    const { runtime, baseUrl, store } = await startTestRuntime({ clock });
+    try {
+      const north = await registerUser(baseUrl, 'route_north', 'Bắc');
+      const south = await registerUser(baseUrl, 'route_south', 'Nam');
+      const post = (token: string, route: string, data: object) => fetch(baseUrl + route, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const created = await post(north.token, '/api/rooms', { title: 'Kiểm tuyến', preferredSlot: 'NORTH' });
+      assert.equal(created.status, 201);
+      const { room } = await created.json();
+      const roomPath = `/api/rooms/${room.matchId}`;
+      const state = store.getMatch(room.matchId)!.state;
+      const unit = state.units.unt_north_hq_01;
+      const targetId = state.regions[unit.regionId].adjacentRegionIds.find(
+        (id) => state.regions[id].controllerNationId === unit.ownerNationId
+      )!;
+      assert.ok(targetId);
+      const url = `${baseUrl}${roomPath}/movement-preview?unitId=${unit.unitId}&destinationId=${targetId}`;
+      const preview = (token: string, endpoint = url) => fetch(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      assert.equal((await fetch(url)).status, 401);
+      assert.equal((await preview(north.token)).status, 409);
+      assert.equal((await post(south.token, '/api/rooms/join', { inviteCode: room.inviteCode })).status, 200);
+      for (const player of [north, south]) {
+        assert.equal((await post(player.token, roomPath + '/ready', { ready: true })).status, 200);
+      }
+      assert.equal((await post(north.token, roomPath + '/start', {})).status, 200);
+      const before = store.getMatch(room.matchId)!;
+
+      const response = await preview(north.token);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('cache-control'), 'no-store');
+      const result = await response.json();
+      assert.equal(result.originId, unit.regionId);
+      assert.equal(result.destinationId, targetId);
+      assert.equal(result.regions[0].id, unit.regionId);
+      assert.equal(result.regions.at(-1).id, targetId);
+      assert.equal(result.estimatedArrivalUtc, Math.max(clock.nowUtc(), before.state.currentUtc) + result.durationMs);
+      assert.ok(result.durationMs > 0);
+      for (const { id } of result.regions) {
+        assert.equal(before.state.regions[id].controllerNationId, unit.ownerNationId);
+      }
+
+      assert.equal((await preview(south.token)).status, 404);
+      assert.equal((await preview(north.token, url.replace(targetId, unit.regionId))).status, 422);
+      assert.equal((await preview(north.token, url.replace(targetId, 'reg_vn_59'))).status, 422);
+      assert.deepEqual(await (await preview(north.token)).json(), result);
+      assert.equal(store.getMatch(room.matchId)!.stateHash, before.stateHash);
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
   it('P02-01: enforces 2 human slots, invite join, lock on start, reconnect slot preservation, anti-spoofing, and surrender', async () => {
     const clock = new ManualClock(1_750_000_000_000);
     const { runtime, baseUrl, store } = await startTestRuntime({ clock });

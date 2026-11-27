@@ -33,6 +33,7 @@ import {
   TRANSPORT_LABELS,
 } from '../mapLayerRegistry';
 import { WorldMapFeature } from '../roomApi';
+import { MovementPreviewPanel, type LoadMovementPreview } from './MovementPreviewPanel';
 
 export type MobileSheetSnap = 'collapsed' | 'half' | 'full';
 
@@ -57,6 +58,7 @@ interface ContextualInspectorProps {
   readonly featuresById: ReadonlyMap<string, WorldMapFeature>;
   readonly onScheduleRegionAction?: (regionId: string) => void;
   readonly actionBusy?: boolean;
+  readonly loadMovementPreview?: LoadMovementPreview;
 }
 
 type AccordionKey = 'overview' | 'terrain' | 'economy' | 'connections' | 'cities' | 'provenance';
@@ -82,6 +84,7 @@ export function ContextualInspector({
   featuresById,
   onScheduleRegionAction,
   actionBusy,
+  loadMovementPreview,
 }: ContextualInspectorProps) {
   const [openSections, setOpenSections] = useState<Record<AccordionKey, boolean>>({
     overview: true,
@@ -113,6 +116,12 @@ export function ContextualInspector({
           (u) => u.regionId === selectedFeature.properties.regionId
         )
       : [];
+
+  const destinations = match && room?.matchId === match.matchId && room.status === 'ACTIVE'
+    ? Object.values(match.regions)
+        .filter((region) => region.controllerNationId === room.viewerNationId && region.regionId !== selectedFeature?.properties.regionId)
+        .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+    : [];
 
   const handleSheetPointerDown = (e: React.PointerEvent) => {
     dragStartYRef.current = e.clientY;
@@ -307,6 +316,17 @@ export function ContextualInspector({
                               Sức mạnh: {fpFormat(u.strengthFp, 1)} · Sẵn sàng:{' '}
                               {fpFormat(u.readinessFp, 0)}% · Tiếp tế: {fpFormat(u.supplyFp, 1)}
                             </p>
+                          )}
+                          {!isRedacted && matchSourceKind === 'ROOM_LIVE'
+                            && room?.status === 'ACTIVE' && room.matchId === match?.matchId
+                            && room.viewerNationId === u.ownerNationId && loadMovementPreview && (
+                            <MovementPreviewPanel
+                              key={`${room.matchId}:${u.unitId}:${u.regionId}`}
+                              unitId={u.unitId}
+                              originId={u.regionId}
+                              destinations={destinations}
+                              load={loadMovementPreview}
+                            />
                           )}
                         </li>
                       );

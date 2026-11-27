@@ -324,6 +324,29 @@ export async function submitRoomCommand(
   return parseJsonOrThrow(res);
 }
 
+export interface MovementPreview {
+  readonly originId: string;
+  readonly destinationId: string;
+  readonly matchVersion: number;
+  readonly estimatedArrivalUtc: number;
+  readonly durationMs: number;
+  readonly regions: readonly { id: string; name: string }[];
+}
+
+export async function fetchMovementPreview(
+  token: string,
+  matchId: string,
+  unitId: string,
+  destinationId: string
+): Promise<MovementPreview> {
+  const query = new URLSearchParams({ unitId, destinationId });
+  const response = await fetch(`/api/rooms/${encodeURIComponent(matchId)}/movement-preview?${query}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+  return parseJsonOrThrow(response);
+}
+
 export async function syncRoomState(
   token: string,
   matchId: string,

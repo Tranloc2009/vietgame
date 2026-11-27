@@ -42,6 +42,7 @@ import {
   createRoom,
   fetchRoomBackupSummary,
   fetchRoomDetail,
+  fetchMovementPreview,
   fetchWorldMap,
   joinRoomByCode,
   listMyRooms,
@@ -561,6 +562,9 @@ export function MultiplayerWorkspace({
               activeRoom ? (regionId) => void handleScheduleRegionAction(regionId) : undefined
             }
             actionBusy={commandBusy}
+            loadMovementPreview={token && activeRoom
+              ? (unitId, destinationId) => fetchMovementPreview(token, activeRoom.matchId, unitId, destinationId)
+              : undefined}
           />
 
           {/* Floating Notification Toast Area */}
