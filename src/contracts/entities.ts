@@ -114,6 +114,7 @@ export const UnitSchema = z
     ownerNationId: NationIdSchema,
     regionId: RegionIdSchema,
     category: UnitCategorySchema,
+    march: z.array(z.object({ regionId: RegionIdSchema, dueUtc: UtcEpochMsSchema }).strict()).min(1).optional(),
     strengthFp: FixedPointIntSchema,
     readinessFp: FixedPointIntSchema,
     supplyFp: FixedPointIntSchema,
@@ -226,6 +227,8 @@ export const CommandPayloadSchema = z.discriminatedUnion('type', [
       reason: z.string().min(1).max(160),
     })
     .strict(),
+  z.object({type:z.literal('ORDER_MARCH'),unitId:UnitIdSchema,targetRegionId:RegionIdSchema}).strict(),
+  z.object({type:z.literal('HALT_MARCH'),unitId:UnitIdSchema}).strict(),
   z
     .object({
       type: z.literal('MOVE_UNIT'),
@@ -402,9 +405,11 @@ export const DomainEventPayloadSchema = z.discriminatedUnion('type', [
       reason: z.string(),
     })
     .strict(),
+  z.object({type:z.literal('MARCH_CHANGED'),unitId:UnitIdSchema,nationId:NationIdSchema,status:z.enum(['STARTED','STOPPED'])}).strict(),
   z
     .object({
       type: z.literal('UNIT_MOVED'),
+      nationId: NationIdSchema.optional(),
       unitId: UnitIdSchema,
       fromRegionId: RegionIdSchema,
       toRegionId: RegionIdSchema,

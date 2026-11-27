@@ -29,10 +29,11 @@ async function bootstrap(): Promise<void> {
     runtime.app.use(vite.middlewares);
   }
 
-  runtime.httpServer.listen(config.port, '0.0.0.0', () => {
+  const bindAddress = process.env.HOST || '0.0.0.0';
+  runtime.httpServer.listen(config.port, bindAddress, () => {
     runtime.scheduler.start();
     console.log(
-      `[VDN] Server running on http://0.0.0.0:${config.port} (env=${config.appEnv}, db=${config.sqliteDbPath})`
+      `[VDN] Server running on http://${bindAddress}:${config.port} (env=${config.appEnv}, db=${config.sqliteDbPath})`
     );
   });
 
@@ -50,3 +51,4 @@ bootstrap().catch((err) => {
   console.error('[VDN] Fatal startup error:', err instanceof Error ? err.message : err);
   process.exit(1);
 });
+

@@ -21,6 +21,7 @@ import {
   ResourceType,
   UtcEpochMs,
 } from '../contracts';
+import { scenarioRoute } from './movementRoute';
 import { SimulationClock } from './clock';
 import {
   appendEconomicLedgerEntry,
@@ -385,6 +386,24 @@ export function reduceCommand(
       break;
     }
 
+    case 'ORDER_MARCH':
+    case 'HALT_MARCH': {
+      const unit=units[payload.unitId];
+      if(!unit || unit.ownerNationId!==actor.nationId) return reject(state,'FORBIDDEN_ACTION','Đơn vị không thuộc quyền chỉ huy.');
+      if(payload.type==='HALT_MARCH'){
+        if(!unit.march)return reject(state,'INVALID_TARGET','Đơn vị đang đứng yên.');
+        const {march,...stopped}=unit;
+        units[unit.unitId]=stopped;
+      }else{
+        if(unit.march)return reject(state,'INVALID_TARGET','Hãy dừng lệnh hiện tại trước.');
+        const route=scenarioRoute(state.regions,unit.regionId,payload.targetRegionId,unit.ownerNationId);
+        if(!route)return reject(state,'INVALID_TARGET','Không có tuyến hợp lệ.');
+        if(unit.supplyFp < route.arrivalsMs.length*UNIT_MOVE_SUPPLY_COST_FP)return reject(state,'INSUFFICIENT_RESOURCES','Đơn vị thiếu tiếp tế cho hành trình.');
+        units[unit.unitId]={...unit,march:route.arrivalsMs.map((offset,i)=>({regionId:route.regionIds[i+1],dueUtc:asUtcEpochMs(nowUtc+offset)}))};
+      }
+      drafts.push({occurredAtUtc:nowUtc,tieBreakPriority:29,tieBreakKey:unit.unitId,payload:{type:'MARCH_CHANGED',nationId:unit.ownerNationId,unitId:unit.unitId,status:payload.type==='HALT_MARCH'?'STOPPED':'STARTED'}});
+      break;
+    }
     case 'MOVE_UNIT': {
       const unit = units[payload.unitId];
       if (!unit) {
@@ -397,6 +416,7 @@ export function reduceCommand(
           `Actor "${actor.actorId}" does not control unit "${unit.unitId}".`
         );
       }
+      if(unit.march)return reject(state,'INVALID_TARGET','Đơn vị đang trên đường.');
       const currentRegion = state.regions[unit.regionId];
       const targetRegion = state.regions[payload.targetRegionId];
       if (!currentRegion || !targetRegion) {
@@ -667,6 +687,23 @@ export function reduceCommand(
         );
       }
 
+      for(const initial of Object.values(units).sort((a,b)=>a.unitId.localeCompare(b.unitId))){
+        if(!initial.march)continue;
+        let unit=initial;
+        for(const leg of initial.march){
+          if(leg.dueUtc>payload.targetUtc)break;
+          const {march,...rest}=unit;
+          if(state.regions[leg.regionId]?.controllerNationId!==unit.ownerNationId || unit.supplyFp<UNIT_MOVE_SUPPLY_COST_FP){
+            units[unit.unitId]=rest;
+            drafts.push({occurredAtUtc:leg.dueUtc,tieBreakPriority:29,tieBreakKey:unit.unitId,payload:{type:'MARCH_CHANGED',nationId:unit.ownerNationId,unitId:unit.unitId,status:'STOPPED'}});
+            break;
+          }
+          const remaining=march!.slice(1);
+          drafts.push({occurredAtUtc:leg.dueUtc,tieBreakPriority:30,tieBreakKey:unit.unitId,payload:{type:'UNIT_MOVED',nationId:unit.ownerNationId,unitId:unit.unitId,fromRegionId:unit.regionId,toRegionId:leg.regionId,supplySpentFp:UNIT_MOVE_SUPPLY_COST_FP}});
+          unit={...rest,regionId:leg.regionId,supplyFp:fpSub(unit.supplyFp,UNIT_MOVE_SUPPLY_COST_FP),...(remaining.length?{march:remaining}:{})};
+          units[unit.unitId]=unit;
+        }
+      }
       const dueJobs = Object.values(jobs)
         .filter(
           (j) =>

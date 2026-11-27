@@ -1,18 +1,25 @@
-import { RegionId, Region, TransportCorridor } from '../contracts';
+import mapData from "../content/geo/vietnam72WorldData.json";
+import { RegionId, Region } from '../contracts';
 
 const BASE_EDGE_DURATION_MS = 10 * 60_000;
 const FP_SCALE = 1000;
+const terrainCosts = new Map(mapData.regions.map(r=>[r.regionId,r.movementCostFp]));
+const network = mapData.transportCorridors;
+export function scenarioRoute(regions: Readonly<Record<string,Region>>,origin:RegionId,destination:RegionId,owner:Region['controllerNationId']){
+  return planMovementRoute(regions,terrainCosts,network,origin,destination,owner);
+}
 
 export interface MovementRoute {
   readonly regionIds: readonly RegionId[];
   readonly durationMs: number;
+  readonly arrivalsMs: readonly number[];
 }
 
 /** Route exclusively over the scenario's own, friendly land graph. No coordinates or unit intel. */
 export function planMovementRoute(
   regions: Readonly<Record<string, Region>>,
   terrainCostByRegion: ReadonlyMap<string, number>,
-  corridors: readonly TransportCorridor[],
+  corridors: ReadonlyArray<{fromRegionId:string;toRegionId:string;movementModifierFp:number}>,
   originId: RegionId,
   destinationId: RegionId,
   ownerNationId: Region['controllerNationId']
@@ -23,7 +30,7 @@ export function planMovementRoute(
     regions[destinationId]?.controllerNationId !== ownerNationId
   ) return null;
 
-  const edgeKey = (a: RegionId, b: RegionId) => a < b ? `${a}/${b}` : `${b}/${a}`;
+  const edgeKey = (a: string, b: string) => a < b ? `${a}/${b}` : `${b}/${a}`;
   const modifiers = new Map<string, number>();
   for (const corridor of corridors) {
     const key = edgeKey(corridor.fromRegionId, corridor.toRegionId);
@@ -35,7 +42,7 @@ export function planMovementRoute(
     .filter((region) => region.controllerNationId === ownerNationId)
     .map((region) => region.regionId)
     .sort();
-  const best = new Map<RegionId, MovementRoute>([[originId, { regionIds: [originId], durationMs: 0 }]]);
+  const best = new Map<RegionId, MovementRoute>([[originId, { regionIds: [originId], durationMs: 0, arrivalsMs: [] }]]);
   const visited = new Set<RegionId>();
 
   while (pending.length > 0) {
@@ -61,7 +68,7 @@ export function planMovementRoute(
       const durationMs = current.durationMs +
         Math.ceil(BASE_EDGE_DURATION_MS * terrain * modifier / FP_SCALE ** 2);
       if (durationMs < (best.get(neighborId)?.durationMs ?? Infinity)) {
-        best.set(neighborId, { regionIds: [...current.regionIds, neighborId], durationMs });
+        best.set(neighborId, { regionIds: [...current.regionIds, neighborId], durationMs, arrivalsMs: [...current.arrivalsMs,durationMs] });
       }
     }
   }

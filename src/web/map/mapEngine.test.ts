@@ -212,6 +212,12 @@ describe('P02-06 Strategic Map Engine 2.0 — Pure Logic & Contracts', () => {
       createdAtUtc: 1_750_000_000_000,
       mode: 'PRODUCTION_REALTIME',
     });
+    const concealed = projectViewer(state, computeStateHash(state), 'NORTH', 'nat_north_dir');
+    assert.equal(concealed.units.unt_south_hq_01, undefined);
+    const observationRegion = state.units.unt_north_hq_01.regionId;
+    for (const u of Object.values(state.units).filter(u=>u.ownerNationId!=='nat_north_dir').slice(0,2)) {
+      state.units[u.unitId]={...u,regionId:observationRegion};
+    }
     const northView = projectViewer(state, computeStateHash(state), 'NORTH', 'nat_north_dir');
     const projected = projectAuthorizedMilitaryEntities(northView);
     const enemyUnits = projected.filter((u) => u.ownerNationId !== 'nat_north_dir');
@@ -307,4 +313,5 @@ describe('P02-06 Strategic Map Engine 2.0 — Pure Logic & Contracts', () => {
     assert.equal(roomResolved.effectiveMatch, roomView);
   });
 });
+
 

@@ -134,6 +134,7 @@ export class MatchClockScheduler {
         }
       };
 
+      for(const unit of Object.values(state.units))if(unit.march)considerDeadline(unit.march[0].dueUtc);
       for (const job of Object.values(state.jobs)) {
         if (job.status === 'SCHEDULED') {
           considerDeadline(job.completesAtUtc as number);
@@ -159,7 +160,7 @@ export class MatchClockScheduler {
       let targetUtcNum: number | null = null;
 
       if (earliestDueJobUtc !== null) {
-        targetUtcNum = earliestDueJobUtc;
+        targetUtcNum = Math.max(state.currentUtc,earliestDueJobUtc);
       } else if ((nowUtc as number) >= nextIntervalUtc) {
         targetUtcNum = Math.min(nowUtc as number, nextIntervalUtc);
       } else {

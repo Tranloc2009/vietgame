@@ -141,6 +141,19 @@ describe('Phase 02 Integration — Rooms, Persistence/Clock, and Live Filtered S
       assert.equal((await preview(north.token, url.replace(targetId, 'reg_vn_59'))).status, 422);
       assert.deepEqual(await (await preview(north.token)).json(), result);
       assert.equal(store.getMatch(room.matchId)!.stateHash, before.stateHash);
+      const march = {schemaVersion:CONTRACT_SCHEMA_VERSION,commandId:'cmd_route_test',idempotencyKey:'idem_route_test',matchId:room.matchId,actorId:WORLD_ACTORS.north,sequence:1,expectedVersion:before.state.version,issuedAtUtc:clock.nowUtc(),payload:{type:'ORDER_MARCH',unitId:unit.unitId,targetRegionId:targetId}};
+      assert.equal((await post(north.token,roomPath+'/commands',march)).status,201);
+      assert.equal((await post(north.token,roomPath+'/commands',march)).status,200);
+      const pending=store.getMatch(room.matchId)!.state.units[unit.unitId];
+      assert.equal(pending.regionId,unit.regionId);
+      assert.equal(pending.march!.at(-1)!.dueUtc,result.estimatedArrivalUtc);
+      assert.equal((await fetch(baseUrl+'/api/matches/'+room.matchId+'/verify-replay',{method:'POST'})).status,404);
+      clock.setUtc(result.estimatedArrivalUtc);
+      runtime.scheduler.runCatchUpCycle();
+      const arrived=store.getMatch(room.matchId)!.state.units[unit.unitId];
+      assert.equal(arrived.regionId,targetId);assert.equal(arrived.march,undefined);
+      assert.equal(arrived.supplyFp,unit.supplyFp-500*(result.regions.length-1));
+      assert.equal(store.verifyMatchReplay(room.matchId)?.verified,true);
     } finally {
       await runtime.close();
       store.close();
@@ -655,12 +668,12 @@ describe('Phase 02 Integration — Rooms, Persistence/Clock, and Live Filtered S
 
       // Symmetric fog-of-war redaction on opposing units
       assert.ok(nMatch.units.unt_north_hq_01.readinessFp > 0);
-      assert.equal(nMatch.units.unt_south_hq_01.readinessFp, 0);
-      assert.ok(nMatch.redactedUnitIds.includes('unt_south_hq_01'));
+      assert.equal(nMatch.units.unt_south_hq_01, undefined);
+      assert.ok(!nMatch.redactedUnitIds.includes('unt_south_hq_01'));
 
       assert.ok(sMatch.units.unt_south_hq_01.readinessFp > 0);
-      assert.equal(sMatch.units.unt_north_hq_01.readinessFp, 0);
-      assert.ok(sMatch.redactedUnitIds.includes('unt_north_hq_01'));
+      assert.equal(sMatch.units.unt_north_hq_01, undefined);
+      assert.ok(!sMatch.redactedUnitIds.includes('unt_north_hq_01'));
 
       // Execute command from North -> both clients receive identical sequenced room:delta
       const northDeltaPromise = waitForWsMessage(wsNorth, (m) => m.type === 'room:delta');
@@ -746,7 +759,7 @@ describe('Phase 02 Integration — Rooms, Persistence/Clock, and Live Filtered S
         syncBody.missedEvents.map((e) => e.sequence),
         [2, 3]
       );
-      assert.equal(syncBody.match.units.unt_north_hq_01.readinessFp, 0);
+      assert.equal(syncBody.match.units.unt_north_hq_01, undefined);
 
       // Also verify WS room:resync after reconnect delivers missed delta events 2..3
       const wsSouth2 = new WebSocket(wsUrl);

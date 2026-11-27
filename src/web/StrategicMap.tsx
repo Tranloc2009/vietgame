@@ -72,6 +72,7 @@ export interface StrategicMapProps {
   readonly onToggleFullscreen?: () => void;
   readonly onScheduleRegionAction?: (regionId: string) => void;
   readonly actionBusy?: boolean;
+  readonly sendMarch?: import('./components/MovementPreviewPanel').SendMarch;
   readonly loadMovementPreview?: LoadMovementPreview;
 }
 
@@ -153,6 +154,7 @@ export function StrategicMap({
   onToggleFullscreen = () => {},
   onScheduleRegionAction,
   actionBusy,
+  sendMarch,
   loadMovementPreview,
 }: StrategicMapProps) {
   // Active Map Mode (switching mode NEVER resets camera or selection)
@@ -1830,6 +1832,7 @@ export function StrategicMap({
               featuresById={featuresById}
               onScheduleRegionAction={onScheduleRegionAction}
               actionBusy={actionBusy}
+              sendMarch={sendMarch}
               loadMovementPreview={loadMovementPreview}
             />
 

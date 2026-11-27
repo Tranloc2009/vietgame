@@ -259,6 +259,8 @@ export function projectRoomEventsForViewer(
   return events.flatMap((event): DomainEvent[] => {
     const payload = event.payload;
     switch (payload.type) {
+      case 'UNIT_MOVED':
+      case 'MARCH_CHANGED':
       case 'RESOURCES_RESERVED':
       case 'RESERVATION_SETTLED':
       case 'BUDGET_POLICY_UPDATED':
@@ -291,11 +293,20 @@ export function projectMatchForViewer(
   const redactedUnitIds: string[] = [];
   const filteredUnits: MatchState['units'] = {};
 
+  const visible = new Set(Object.values(state.regions).filter(r=>r.controllerNationId===viewerNationId).map(r=>r.regionId));
+  for(const unit of Object.values(state.units)){
+    if(unit.ownerNationId!==viewerNationId)continue;
+    visible.add(unit.regionId);
+    for(const neighbor of state.regions[unit.regionId].adjacentRegionIds)visible.add(neighbor);
+  }
   for (const [unitId, unit] of Object.entries(publicFields.units)) {
+    if(!viewerNationId || (unit.ownerNationId!==viewerNationId&&!visible.has(unit.regionId)))continue;
     if (viewerNationId && unit.ownerNationId !== viewerNationId) {
       redactedUnitIds.push(unitId);
+      const { march: privateRoute, ...contact } = unit;
       filteredUnits[unitId] = {
-        ...unit,
+        ...contact,
+        strengthFp: 0 as typeof unit.strengthFp,
         readinessFp: 0 as typeof unit.readinessFp,
         supplyFp: 0 as typeof unit.supplyFp,
       };
@@ -358,6 +369,7 @@ export function projectMatchForViewer(
   return FilteredClientMatchViewSchema.parse({
     ...publicFields,
     units: filteredUnits,
+    idempotencyReceipts: Object.fromEntries(Object.entries(state.idempotencyReceipts).filter(([,receipt])=>state.actors[receipt.actorId]?.nationId===viewerNationId)),
     events: projectRoomEventsForViewer(publicFields.events, viewerNationId),
     ...(filteredLedger !== undefined ? { economicLedger: filteredLedger } : {}),
     ...(filteredPhase03 !== undefined ? { phase03Economy: filteredPhase03 } : {}),
@@ -367,3 +379,4 @@ export function projectMatchForViewer(
     redactedUnitIds: redactedUnitIds.sort(),
   });
 }
+

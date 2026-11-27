@@ -40,11 +40,9 @@ import {
 import { ServerConfig } from './config';
 import { SqliteMatchStore } from './db/sqliteStore';
 import { MatchClockScheduler } from './scheduler';
-import { planMovementRoute } from '../simulation/movementRoute';
+import { scenarioRoute } from '../simulation/movementRoute';
 
-const movementTerrainCosts = new Map<string, number>(WORLD_MAP_72_GEOJSON.features.map(({ properties }) => [
-  properties.regionId, properties.movementCostFp,
-]));
+
 
 export interface ServerRuntime {
   readonly app: Express;
@@ -57,6 +55,7 @@ export interface ServerRuntime {
 }
 
 interface SocketRoomSession {
+  token: string;
   user: PublicUser;
   matchId: MatchId;
   slot: HumanSlot;
@@ -145,7 +144,10 @@ function checkCommandNationOwnership(
         };
       }
       return { ok: true };
+    case 'ORDER_MARCH':
+    case 'HALT_MARCH':
     case 'MOVE_UNIT':
+      if(command.payload.type==='MOVE_UNIT')return {ok:false,code:'USE_MARCH_ORDER',reason:'Phòng trực tuyến sử dụng lệnh hành quân theo đồng hồ máy chủ.'};
       // Unit ownership is further verified against actor.nationId inside reduceCommand
       return { ok: true };
     case 'SET_TAX_RATE':
@@ -196,7 +198,7 @@ export function createServerRuntime(
   app.use(express.json({ limit: '256kb' }));
 
   const httpServer = http.createServer(app);
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 });
   const socketSessions = new Map<WebSocket, SocketRoomSession>();
 
   httpServer.on('upgrade', (request, socket, head) => {
@@ -218,10 +220,14 @@ export function createServerRuntime(
     }
   };
 
+  function validSubscription(client: WebSocket, session:SocketRoomSession):boolean{
+    if(store.resolveSession(session.token,clock.nowUtc())?.userId===session.user.userId)return true;
+    socketSessions.delete(client);client.close(1008,'Session expired');return false;
+  }
   const broadcastRoomStatus = (matchId: MatchId): void => {
     const serverUtc = clock.nowUtc();
     for (const [client, session] of socketSessions.entries()) {
-      if (client.readyState !== WebSocket.OPEN || session.matchId !== matchId) continue;
+      if (client.readyState !== WebSocket.OPEN || session.matchId !== matchId || !validSubscription(client,session)) continue;
       const roomRes = store.getRoomForUser(matchId, session.user.userId);
       if (roomRes.ok) {
         client.send(
@@ -247,7 +253,7 @@ export function createServerRuntime(
     if (payload.emittedEvents.length === 0) return;
     const serverUtc = clock.nowUtc();
     for (const [client, session] of socketSessions.entries()) {
-      if (client.readyState === WebSocket.OPEN && session.matchId === payload.matchId) {
+      if (client.readyState === WebSocket.OPEN && session.matchId === payload.matchId && validSubscription(client,session)) {
         const envelope = MatchDeltaEnvelopeSchema.parse({
           type: 'room:delta',
           matchId: payload.matchId,
@@ -349,6 +355,7 @@ export function createServerRuntime(
           }
 
           socketSessions.set(socket, {
+            token,
             user,
             matchId: parsedMatchId.data,
             slot: slotInfo.slot,
@@ -389,6 +396,7 @@ export function createServerRuntime(
 
         if (parsed.type === 'room:resync') {
           const session = socketSessions.get(socket);
+          if (session && !validSubscription(socket,session))return;
           if (!session) {
             socket.send(
               JSON.stringify({
@@ -430,7 +438,7 @@ export function createServerRuntime(
                 toSequence: missed[missed.length - 1].sequence,
                 version: loaded.state.version,
                 stateHash: loaded.stateHash,
-                events: missed,
+                events: projectRoomEventsForViewer(missed,session.nationId),
                 serverUtc: clock.nowUtc(),
               });
               socket.send(JSON.stringify(envelope));
@@ -735,6 +743,7 @@ export function createServerRuntime(
       return;
     }
 
+    if(store.getRoomRow(parsedId.data)){res.status(404).json({ok:false,code:'MATCH_NOT_FOUND'});return;}
     const report = store.verifyMatchReplay(parsedId.data);
     if (!report) {
       res.status(404).json({
@@ -844,6 +853,7 @@ export function createServerRuntime(
     const token = extractBearerToken(req);
     if (token) {
       store.revokeSession(token);
+      for(const [socket,session] of socketSessions)if(session.token===token){socketSessions.delete(socket);socket.close(1008,'Signed out');}
     }
     res.json({ ok: true });
   });
@@ -1031,8 +1041,8 @@ export function createServerRuntime(
       res.status(404).json({ ok: false, code: 'UNIT_NOT_AVAILABLE', reason: 'Đơn vị không khả dụng.' });
       return;
     }
-    const route = planMovementRoute(
-      state.regions, movementTerrainCosts, WORLD_GEO_LAYERS.transportCorridors,
+    const route = scenarioRoute(
+      state.regions,
       unit.regionId, destination.data, unit.ownerNationId
     );
     if (!route) {

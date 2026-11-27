@@ -58,6 +58,7 @@ interface ContextualInspectorProps {
   readonly featuresById: ReadonlyMap<string, WorldMapFeature>;
   readonly onScheduleRegionAction?: (regionId: string) => void;
   readonly actionBusy?: boolean;
+  readonly sendMarch?: import('./MovementPreviewPanel').SendMarch;
   readonly loadMovementPreview?: LoadMovementPreview;
 }
 
@@ -84,6 +85,7 @@ export function ContextualInspector({
   featuresById,
   onScheduleRegionAction,
   actionBusy,
+  sendMarch,
   loadMovementPreview,
 }: ContextualInspectorProps) {
   const [openSections, setOpenSections] = useState<Record<AccordionKey, boolean>>({
@@ -325,6 +327,7 @@ export function ContextualInspector({
                               unitId={u.unitId}
                               originId={u.regionId}
                               destinations={destinations}
+                              send={sendMarch} march={u.march}
                               load={loadMovementPreview}
                             />
                           )}
