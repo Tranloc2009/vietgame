@@ -293,9 +293,15 @@ export function projectMatchForViewer(
   const redactedUnitIds: string[] = [];
   const filteredUnits: MatchState['units'] = {};
 
-  const visible = new Set(Object.values(state.regions).filter(r=>r.controllerNationId===viewerNationId).map(r=>r.regionId));
+  const observers=new Set([viewerNationId]);
+  for(const t of Object.values(state.treaties)){
+    if(t.kind!=='SHARED_INTEL'||t.status!=='ACTIVE'||(t.expiresAtUtc!==null && t.expiresAtUtc<=state.currentUtc))continue;
+    if(t.proposerNationId===viewerNationId)observers.add(t.targetNationId);
+    if(t.targetNationId===viewerNationId)observers.add(t.proposerNationId);
+  }
+  const visible = new Set(Object.values(state.regions).filter(r=>observers.has(r.controllerNationId)).map(r=>r.regionId));
   for(const unit of Object.values(state.units)){
-    if(unit.ownerNationId!==viewerNationId)continue;
+    if(!observers.has(unit.ownerNationId))continue;
     visible.add(unit.regionId);
     for(const neighbor of state.regions[unit.regionId].adjacentRegionIds)visible.add(neighbor);
   }

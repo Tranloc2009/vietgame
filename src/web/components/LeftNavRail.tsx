@@ -1,5 +1,6 @@
 import {
   Activity,
+  Handshake,
   Compass,
   Coins,
   Layers,
@@ -8,7 +9,7 @@ import {
   Users,
 } from 'lucide-react';
 
-export type WorkspaceDrawerId = 'none' | 'search' | 'rooms' | 'economy' | 'display' | 'diagnostics';
+export type WorkspaceDrawerId = 'none' | 'search' | 'rooms' | 'economy' | 'display' | 'diagnostics' | 'diplomacy';
 
 interface LeftNavRailProps {
   readonly activeDrawer: WorkspaceDrawerId;
@@ -55,6 +56,8 @@ const NAV_ITEMS: readonly NavItem[] = [
     icon: Coins,
   },
   {
+    id:'diplomacy',label:'Ngoại giao và tin chiến dịch',shortLabel:'Ngoại giao',testId:'rail-btn-diplomacy',icon:Handshake,
+  },{
     id: 'display',
     label: 'Lớp Địa lý & Cấu hình Đồ họa',
     shortLabel: 'Hiển thị',
@@ -76,13 +79,13 @@ export function LeftNavRail({
   hasActiveRoom,
   isMobile,
 }: LeftNavRailProps) {
-  const items = NAV_ITEMS.filter((item) => item.id !== 'economy' || hasActiveRoom);
+  const items = NAV_ITEMS.filter((item) => !['economy','diplomacy'].includes(item.id) || hasActiveRoom);
   if (isMobile) {
     return (
       <nav
         aria-label="Điều hướng chiến lược di động"
         data-testid="mobile-bottom-nav"
-        className={`z-30 grid h-14 shrink-0 border-t border-[#2B3540] bg-[#12171D] pb-[env(safe-area-inset-bottom)] text-[#A8B2BC] ${hasActiveRoom ? 'grid-cols-6' : 'grid-cols-5'}`}
+        className={`z-30 grid h-14 shrink-0 border-t border-[#2B3540] bg-[#12171D] pb-[env(safe-area-inset-bottom)] text-[#A8B2BC] ${hasActiveRoom ? 'grid-cols-7' : 'grid-cols-5'}`}
       >
         {items.map((item) => {
           const Icon = item.icon;

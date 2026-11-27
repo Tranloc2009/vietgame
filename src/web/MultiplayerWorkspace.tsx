@@ -32,6 +32,7 @@ import {
   wholeUnitsToFixedPoint,
 } from '../contracts';
 import { HealthPayload, WsLiveState } from './api';
+import { DiplomacyDrawer } from './DiplomacyDrawer';
 import { LeftNavRail, WorkspaceDrawerId } from './components/LeftNavRail';
 import { TopCommandBar } from './components/TopCommandBar';
 import { RoomEconomyDrawer, type RoomCommandFactory } from './RoomEconomyDrawer';
@@ -627,6 +628,7 @@ export function MultiplayerWorkspace({
             />
           )}
 
+          {activeDrawer==='diplomacy' && activeRoom && activeMatch?.matchId===activeRoom.matchId && <DiplomacyDrawer match={activeMatch} room={activeRoom} busy={commandBusy} submit={submitActiveRoomCommand} close={()=>setActiveDrawer('none')}/>}
           {activeDrawer === 'rooms' && (
             <aside
               aria-label="Phòng đấu 2 người chơi"

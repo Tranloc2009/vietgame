@@ -144,6 +144,7 @@ function checkCommandNationOwnership(
         };
       }
       return { ok: true };
+    case 'UPDATE_INTEL_PACT':
     case 'ORDER_MARCH':
     case 'HALT_MARCH':
     case 'MOVE_UNIT':

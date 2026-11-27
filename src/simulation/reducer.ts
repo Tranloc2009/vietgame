@@ -542,7 +542,17 @@ export function reduceCommand(
       break;
     }
 
+    case 'UPDATE_INTEL_PACT': {
+      const t=treaties[payload.treatyId];
+      if(!t||t.kind!=='SHARED_INTEL'||!actor.nationId||![t.proposerNationId,t.targetNationId].includes(actor.nationId))return reject(state,'FORBIDDEN_ACTION','Không có quyền thay đổi hiệp ước.');
+      if(!['PROPOSED','ACTIVE'].includes(t.status)||(t.expiresAtUtc!==null&&t.expiresAtUtc<=nowUtc))return reject(state,'INVALID_TARGET','Hiệp ước đã kết thúc.');
+      if(payload.decision==='ACCEPT'&&(actor.nationId!==t.targetNationId||t.status!=='PROPOSED'))return reject(state,'FORBIDDEN_ACTION','Chỉ bên nhận có thể chấp thuận đề nghị đang chờ.');
+      const status=payload.decision==='ACCEPT'?'ACTIVE':'TERMINATED';
+      treaties[t.treatyId]={...t,status};
+      drafts.push({occurredAtUtc:nowUtc,tieBreakPriority:50,tieBreakKey:t.treatyId,payload:{type:'INTEL_PACT_STATUS',treatyId:t.treatyId,status}});break;
+    }
     case 'PROPOSE_TREATY': {
+      if(payload.kind==='SHARED_INTEL'&&Object.values(treaties).some(t=>t.kind===payload.kind&&[t.targetNationId,t.proposerNationId].includes(payload.targetNationId)&&[t.targetNationId,t.proposerNationId].includes(payload.proposerNationId)&&['ACTIVE','PROPOSED'].includes(t.status)&&(t.expiresAtUtc===null||t.expiresAtUtc>nowUtc)))return reject(state,'DUPLICATE_ENTITY','Đã có đề nghị hoặc hiệp ước giữa hai phe.');
       if (actor.role !== 'SYSTEM' && actor.nationId !== payload.proposerNationId) {
         return reject(
           state,
@@ -703,6 +713,11 @@ export function reduceCommand(
           unit={...rest,regionId:leg.regionId,supplyFp:fpSub(unit.supplyFp,UNIT_MOVE_SUPPLY_COST_FP),...(remaining.length?{march:remaining}:{})};
           units[unit.unitId]=unit;
         }
+      }
+      for(const t of Object.values(treaties)){
+        if(t.kind!=='SHARED_INTEL'||!['ACTIVE','PROPOSED'].includes(t.status)||t.expiresAtUtc===null||t.expiresAtUtc>payload.targetUtc)continue;
+        treaties[t.treatyId]={...t,status:'EXPIRED'};
+        drafts.push({occurredAtUtc:t.expiresAtUtc,tieBreakPriority:50,tieBreakKey:t.treatyId,payload:{type:'INTEL_PACT_STATUS',treatyId:t.treatyId,status:'EXPIRED'}});
       }
       const dueJobs = Object.values(jobs)
         .filter(

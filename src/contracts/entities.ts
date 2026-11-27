@@ -163,7 +163,7 @@ export const TreatySchema = z
     treatyId: TreatyIdSchema,
     proposerNationId: NationIdSchema,
     targetNationId: NationIdSchema,
-    kind: z.enum(['NON_AGGRESSION', 'TRADE_CORRIDOR', 'NEUTRAL_ZONE']),
+    kind: z.enum(['NON_AGGRESSION', 'TRADE_CORRIDOR', 'NEUTRAL_ZONE', 'SHARED_INTEL']),
     status: TreatyStatusSchema,
     createdAtUtc: UtcEpochMsSchema,
     expiresAtUtc: UtcEpochMsSchema.nullable(),
@@ -227,6 +227,7 @@ export const CommandPayloadSchema = z.discriminatedUnion('type', [
       reason: z.string().min(1).max(160),
     })
     .strict(),
+  z.object({type:z.literal('UPDATE_INTEL_PACT'),treatyId:TreatyIdSchema,decision:z.enum(['ACCEPT','END'])}).strict(),
   z.object({type:z.literal('ORDER_MARCH'),unitId:UnitIdSchema,targetRegionId:RegionIdSchema}).strict(),
   z.object({type:z.literal('HALT_MARCH'),unitId:UnitIdSchema}).strict(),
   z
@@ -253,7 +254,7 @@ export const CommandPayloadSchema = z.discriminatedUnion('type', [
       treatyId: TreatyIdSchema,
       proposerNationId: NationIdSchema,
       targetNationId: NationIdSchema,
-      kind: z.enum(['NON_AGGRESSION', 'TRADE_CORRIDOR', 'NEUTRAL_ZONE']),
+      kind: z.enum(['NON_AGGRESSION', 'TRADE_CORRIDOR', 'NEUTRAL_ZONE', 'SHARED_INTEL']),
       durationDays: z.number().int().min(1).max(365),
     })
     .strict(),
@@ -405,6 +406,7 @@ export const DomainEventPayloadSchema = z.discriminatedUnion('type', [
       reason: z.string(),
     })
     .strict(),
+  z.object({type:z.literal('INTEL_PACT_STATUS'),treatyId:TreatyIdSchema,status:TreatyStatusSchema}).strict(),
   z.object({type:z.literal('MARCH_CHANGED'),unitId:UnitIdSchema,nationId:NationIdSchema,status:z.enum(['STARTED','STOPPED'])}).strict(),
   z
     .object({
@@ -432,7 +434,7 @@ export const DomainEventPayloadSchema = z.discriminatedUnion('type', [
       treatyId: TreatyIdSchema,
       proposerNationId: NationIdSchema,
       targetNationId: NationIdSchema,
-      kind: z.enum(['NON_AGGRESSION', 'TRADE_CORRIDOR', 'NEUTRAL_ZONE']),
+      kind: z.enum(['NON_AGGRESSION', 'TRADE_CORRIDOR', 'NEUTRAL_ZONE', 'SHARED_INTEL']),
     })
     .strict(),
   z

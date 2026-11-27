@@ -11,6 +11,7 @@ import {
   CONTRACT_SCHEMA_VERSION,
   IdempotencyKeySchema,
   RegionIdSchema,
+  TreatyIdSchema,
   wholeUnitsToFixedPoint,
 } from '../contracts';
 import {
@@ -32,6 +33,33 @@ import {
   replayCommandLog,
   SimulationInvariantError,
 } from './index';
+
+test('chỉ bên nhận được chấp thuận và quyền chia sẻ hết hạn theo đồng hồ trận', () => {
+  const initial = createTwoFactionFictionalFixture();
+  const commands = createDeterministicFixtureCommandLog().map(entry => entry.command);
+  const treatyId = TreatyIdSchema.parse('trt_visibility');
+  const clock = new FixedClock(commands[0].issuedAtUtc);
+  const proposed = reduceCommand(initial, {
+    ...commands[0],
+    payload: {type: 'PROPOSE_TREATY', kind: 'SHARED_INTEL', treatyId,
+      proposerNationId: FIXTURE_NATIONS.north, targetNationId: FIXTURE_NATIONS.south, durationDays: 1},
+  }, clock);
+  assert.ok(proposed.ok);
+  const response: Command = {...commands[1], payload: {type:'UPDATE_INTEL_PACT', treatyId, decision:'ACCEPT'}};
+  const answerClock = new FixedClock(response.issuedAtUtc);
+  const denied = reduceCommand(proposed.nextState, {...response, actorId: FIXTURE_ACTORS.north, sequence: 2}, answerClock);
+  assert.ok(!denied.ok);
+  assert.equal(denied.code, 'FORBIDDEN_ACTION');
+  const accepted = reduceCommand(proposed.nextState, response, answerClock);
+  assert.ok(accepted.ok);
+  assert.equal(accepted.nextState.treaties[treatyId].status, 'ACTIVE');
+  const deadline = accepted.nextState.treaties[treatyId].expiresAtUtc!;
+  const expired = reduceCommand(accepted.nextState, {...commands[3], issuedAtUtc: deadline, expectedVersion: 2,
+    payload: {type: 'ADVANCE_REALTIME_TICK', targetUtc: deadline}}, new FixedClock(deadline));
+  assert.ok(expired.ok);
+  assert.equal(expired.nextState.treaties[treatyId].status, 'EXPIRED');
+  assert.equal(expired.emittedEvents.filter(e => e.payload.type === 'INTEL_PACT_STATUS').length, 1);
+});
 
 test('P01-03: simulation module source files contain zero Date.now() or Math.random() calls', () => {
   const simDir = path.resolve(process.cwd(), 'src/simulation');
