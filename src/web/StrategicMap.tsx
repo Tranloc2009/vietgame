@@ -54,6 +54,7 @@ import {
   getActiveMapLayerDescriptor,
 } from './mapLayerRegistry';
 import { WorldMapFeature, WorldMapGeoJson, WorldMapLayers } from './roomApi';
+import type { LoadMovementPreview } from './components/MovementPreviewPanel';
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -71,6 +72,7 @@ export interface StrategicMapProps {
   readonly onToggleFullscreen?: () => void;
   readonly onScheduleRegionAction?: (regionId: string) => void;
   readonly actionBusy?: boolean;
+  readonly loadMovementPreview?: LoadMovementPreview;
 }
 
 const SEA_LABELS: readonly { key: string; text: string; coords: readonly [number, number] }[] = [
@@ -151,6 +153,7 @@ export function StrategicMap({
   onToggleFullscreen = () => {},
   onScheduleRegionAction,
   actionBusy,
+  loadMovementPreview,
 }: StrategicMapProps) {
   // Active Map Mode (switching mode NEVER resets camera or selection)
   const [layer, setLayer] = useState<MapLayerMode>('POLITICAL');
@@ -1827,6 +1830,7 @@ export function StrategicMap({
               featuresById={featuresById}
               onScheduleRegionAction={onScheduleRegionAction}
               actionBusy={actionBusy}
+              loadMovementPreview={loadMovementPreview}
             />
 
             {/* Bottom-Left: Lightweight Expandable Minimap (Desktop/Tablet only) */}
