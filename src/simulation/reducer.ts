@@ -387,6 +387,7 @@ export function reduceCommand(
     }
 
     case 'ORDER_MARCH':
+    case 'REROUTE_MARCH':
     case 'HALT_MARCH': {
       const unit=units[payload.unitId];
       if(!unit || unit.ownerNationId!==actor.nationId) return reject(state,'FORBIDDEN_ACTION','Đơn vị không thuộc quyền chỉ huy.');
@@ -395,7 +396,10 @@ export function reduceCommand(
         const {march,...stopped}=unit;
         units[unit.unitId]=stopped;
       }else{
-        if(unit.march)return reject(state,'INVALID_TARGET','Hãy dừng lệnh hiện tại trước.');
+        if (payload.type === 'ORDER_MARCH' && unit.march)
+          return reject(state,'INVALID_TARGET','Đơn vị đã có lệnh hành quân.');
+        if (payload.type === 'REROUTE_MARCH' && (!unit.march || unit.march.at(-1)?.regionId === payload.targetRegionId))
+          return reject(state,'INVALID_TARGET','Chọn đích mới cho đơn vị đang hành quân.');
         const route=scenarioRoute(state.regions,unit.regionId,payload.targetRegionId,unit.ownerNationId);
         if(!route)return reject(state,'INVALID_TARGET','Không có tuyến hợp lệ.');
         if(unit.supplyFp < route.arrivalsMs.length*UNIT_MOVE_SUPPLY_COST_FP)return reject(state,'INSUFFICIENT_RESOURCES','Đơn vị thiếu tiếp tế cho hành trình.');

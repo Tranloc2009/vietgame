@@ -147,6 +147,11 @@ describe('Phase 02 Integration — Rooms, Persistence/Clock, and Live Filtered S
       const pending=store.getMatch(room.matchId)!.state.units[unit.unitId];
       assert.equal(pending.regionId,unit.regionId);
       assert.equal(pending.march!.at(-1)!.dueUtc,result.estimatedArrivalUtc);
+      const invalidReroute = {...march, commandId:'cmd_reroute_invalid', idempotencyKey:'idem_reroute_invalid',
+        expectedVersion:before.state.version+1, sequence:2, payload:{...march.payload, type:'REROUTE_MARCH',targetRegionId:unit.regionId}};
+      const stateBeforeReroute = store.getMatch(room.matchId)!.stateHash;
+      assert.equal((await post(north.token,roomPath+'/commands',invalidReroute)).status,422);
+      assert.equal(store.getMatch(room.matchId)!.stateHash,stateBeforeReroute);
       assert.equal((await fetch(baseUrl+'/api/matches/'+room.matchId+'/verify-replay',{method:'POST'})).status,404);
       clock.setUtc(result.estimatedArrivalUtc);
       runtime.scheduler.runCatchUpCycle();

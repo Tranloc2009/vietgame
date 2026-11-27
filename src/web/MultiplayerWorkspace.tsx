@@ -582,7 +582,7 @@ export function MultiplayerWorkspace({
               activeRoom ? (regionId) => void handleScheduleRegionAction(regionId) : undefined
             }
             actionBusy={commandBusy}
-            sendMarch={(unitId,targetRegionId)=>submitActiveRoomCommand(()=>targetRegionId?{type:'ORDER_MARCH',unitId,targetRegionId}:{type:'HALT_MARCH',unitId})}
+            sendMarch={(unitId,targetRegionId,reroute)=>submitActiveRoomCommand(()=>targetRegionId?{type:reroute?'REROUTE_MARCH':'ORDER_MARCH',unitId,targetRegionId}:{type:'HALT_MARCH',unitId})}
             loadMovementPreview={token && activeRoom
               ? (unitId, destinationId) => fetchMovementPreview(token, activeRoom.matchId, unitId, destinationId)
               : undefined}

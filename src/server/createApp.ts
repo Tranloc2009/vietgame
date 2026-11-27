@@ -146,6 +146,7 @@ function checkCommandNationOwnership(
       return { ok: true };
     case 'UPDATE_INTEL_PACT':
     case 'ORDER_MARCH':
+    case 'REROUTE_MARCH':
     case 'HALT_MARCH':
     case 'MOVE_UNIT':
       if(command.payload.type==='MOVE_UNIT')return {ok:false,code:'USE_MARCH_ORDER',reason:'Phòng trực tuyến sử dụng lệnh hành quân theo đồng hồ máy chủ.'};

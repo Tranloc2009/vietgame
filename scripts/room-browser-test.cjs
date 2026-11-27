@@ -195,6 +195,22 @@ const { chromium } = require("playwright");
           "march-" + viewport.width + ".png",
         ),
       });
+      await a.getByRole("button", { name: "Đổi điểm đến" }).click();
+      await a.getByRole("button", { name: "Giữ tuyến hiện tại" }).click();
+      await a.getByRole("button", { name: "Đổi điểm đến" }).click();
+      const replacement = await select.selectOption({ index: 1 });
+      await a.getByRole("button", { name: "Xem trước tuyến" }).click();
+      const rerouted = a.waitForResponse(
+        (r) => r.url().endsWith("/commands") && r.request().method() === "POST",
+      );
+      await a.getByRole("button", { name: "Xác nhận đổi đích" }).click();
+      const rerouteResponse = await rerouted;
+      assert.equal(rerouteResponse.status(), 201);
+      const reroutedUnit = (await rerouteResponse.json()).match.units[
+        marching.unitId
+      ];
+      assert.equal(reroutedUnit.march.at(-1).regionId, replacement[0]);
+      assert.notEqual(replacement[0], marching.march.at(-1).regionId);
       const haltAck = a.waitForResponse(
         (r) => r.url().endsWith("/commands") && r.request().method() === "POST",
       );

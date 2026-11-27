@@ -229,6 +229,7 @@ export const CommandPayloadSchema = z.discriminatedUnion('type', [
     .strict(),
   z.object({type:z.literal('UPDATE_INTEL_PACT'),treatyId:TreatyIdSchema,decision:z.enum(['ACCEPT','END'])}).strict(),
   z.object({type:z.literal('ORDER_MARCH'),unitId:UnitIdSchema,targetRegionId:RegionIdSchema}).strict(),
+  z.object({type:z.literal('REROUTE_MARCH'),unitId:UnitIdSchema,targetRegionId:RegionIdSchema}).strict(),
   z.object({type:z.literal('HALT_MARCH'),unitId:UnitIdSchema}).strict(),
   z
     .object({
