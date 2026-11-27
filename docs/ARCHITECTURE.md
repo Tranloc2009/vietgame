@@ -1,5 +1,15 @@
 # Kiến trúc hệ thống — VIETNAM: THE DIVIDED NATION
 
+## Lệnh hành quân và quyền quan sát
+
+Khi người chơi xem trước tuyến, máy chủ tính đường trên đồ thị của kịch bản. Lệnh xác nhận được kiểm tra quyền sở hữu, phiên bản trận, số thứ tự và tiếp tế. Máy chủ ghi từng thời điểm đến vùng vào SQLite. Đồng hồ trận đưa quân qua các chặng đến hạn. Đổi đích tính lại từ vùng đã đến gần nhất. Tuyến hiện tại vẫn có hiệu lực cho đến khi máy chủ chấp nhận lệnh thay thế.
+
+Hiệp ước chia sẻ tầm nhìn cần bên nhận chấp thuận. Trong thời gian có hiệu lực, hai phe nhìn thấy liên hệ trong vùng quan sát chung. Lệnh di chuyển và chỉ số đơn vị chỉ có trong bản trạng thái gửi cho chủ quân. Khi có thông báo thay đổi, trình duyệt nhận dữ liệu đã lọc theo phiên đăng nhập. Hết hạn và chấm dứt đều thu hồi quyền chia sẻ.
+
+### Chạy bản cục bộ
+
+Sau khi cài các gói theo khóa phụ thuộc, chạy bản build. Đặt APP_ENV và NODE_ENV thành production, HOST thành 127.0.0.1, PORT thành cổng còn trống và SQLITE_DB_PATH thành đường dẫn SQLite dành riêng cho bản chơi. Chạy `node node_modules/tsx/dist/cli.mjs server.ts` từ thư mục chứa package.json. Mở /api/health để kiểm tra kết nối cơ sở dữ liệu rồi mở / để vào game. Dùng thư mục dữ liệu riêng cho kiểm thử trình duyệt.
+
 ## 1. Tổng quan phân lớp
 
 Ứng dụng giữ nguyên entrypoint tương thích Google AI Studio Build (`index.html`, `src/main.tsx`, `src/App.tsx`, `server.ts` trên cổng `3000`) và tách rạch ròi 6 miền trách nhiệm theo thư mục:
