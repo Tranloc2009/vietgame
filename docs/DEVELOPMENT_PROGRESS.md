@@ -8,4 +8,4 @@
 
 | T02b Đổi đích nguyên tử | T02 | P0 | VERIFIED. Xem trước và hủy đổi đích giữ tuyến đang chạy. Xác nhận thay thế tuyến bằng một lệnh | MovementPreviewPanel.tsx, reducer.ts, createApp.ts | API kiểm tra giữ nguyên trạng thái khi lệnh lỗi, hai trình duyệt đổi đích rồi dừng | 1aebb13 |
 
-Mốc đối chiếu của bản chơi đơn gồm file HTML và nguồn trong ../ban-do ở ngoài repo này. Phần nghiên cứu và huy động tại đó đã được kiểm lại riêng. Xem TEST_REPORT.md và NEXT_TASK.md.
+Bản chơi đơn đã được đưa vào nhánh trong `campaign/`, đóng gói thành `index.html` ở gốc. Đây là bản đồ mặc định của bản bàn giao. Bản nhiều người chơi ở `/rooms.html` dùng để tiếp tục kiểm thử hành quân và ngoại giao. Xem TEST_REPORT.md và NEXT_TASK.md.

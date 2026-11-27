@@ -1,5 +1,7 @@
 # Kết quả kiểm thử ngày 27/11/2026
 
+Sau khi đổi bản đồ mặc định, đã chạy lại TypeScript, build và đủ 50 bài hồi quy. Bộ trình duyệt mở trực tiếp trang chủ của bản build, thực hiện nghiên cứu, huy động, chọn quân và đổi đích trên cả ba kích thước. Hai phiên nhiều người chơi mở từ /rooms.html cũng vượt qua bộ kiểm thử ở 1440 và 390 px.
+
 | Kiểm tra | Kết quả quan sát |
 |---|---|
 | TypeScript | Đạt khi chạy tsc --noEmit |

@@ -1,5 +1,7 @@
 # Điểm tiếp tục
 
+Bản đồ chính nằm trong `campaign/`. Trang chủ dùng bản đóng gói `index.html`. Tiếp tục trên bản đồ này khi nối nghiên cứu và huy động với máy chủ. Mở `/rooms.html` để kiểm tra hành vi phòng mạng đã có trước khi tích hợp.
+
 **T04 · P0 · Danh mục nghiên cứu và huy động của phòng chơi hiện đại**
 
 Phụ thuộc T01, T02 và danh mục tài nguyên của kịch bản. Đặt nội dung hiện đại trong kịch bản chọn riêng. Khi đọc trận cũ, giữ định danh kịch bản lịch sử và kết quả replay.

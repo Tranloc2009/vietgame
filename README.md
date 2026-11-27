@@ -1,5 +1,15 @@
 # VIETNAM: THE DIVIDED NATION
 
+## Bàn giao cho Antigravity · 27/11/2026
+
+Mở [index.html](index.html) để chơi chiến dịch Việt Nam, hoặc chạy ứng dụng và mở trang chủ. Đây là bản đồ đã thử với 63 vùng theo bộ dữ liệu lịch sử và 60 điểm dân cư. Mã nguồn, dữ liệu địa lý và hướng dẫn đóng gói nằm trong [campaign](campaign/NGUON.md).
+
+**Luồng đã chạy trong bản chơi đơn:** nghiên cứu Bộ binh cơ giới I, xây văn phòng, huy động tại thành phố, chọn đơn vị, di chuyển, dừng hoặc đổi đích. Cấp II rút ngắn thời gian lệnh mới. Kho, công trình, quân và tiến độ được lưu bằng IndexedDB trên trình duyệt.
+
+**Phòng hai người** có đường vào riêng ở `/rooms.html` khi chạy máy chủ. Bản đồ 1955 đã được gỡ khỏi trang chủ. Phòng hiện dùng dữ liệu kịch bản 72 vùng với hành quân, đổi đích và chia sẻ tầm nhìn qua hiệp ước. Nối nghiên cứu và huy động của chiến dịch Việt Nam với máy chủ là [phần việc kế tiếp](docs/NEXT_TASK.md).
+
+## Nền tảng phòng nhiều người chơi
+
 Nền tảng mô phỏng chiến lược lịch sử thay thế (alternate-history grand strategy) theo kiến trúc **server-authoritative**, lưu trữ bền vững bằng **SQLite**, đồng bộ thời gian thực qua **WebSocket**, không phụ thuộc bất kỳ AI API trả phí nào.
 
 > **Tuyên bố bối cảnh:** Mọi số liệu tài nguyên, thực thể, phe phái và cơ chế xung đột/ảnh hưởng trong ứng dụng là **cơ chế trò chơi trừu tượng thuộc bối cảnh lịch sử thay thế**, không phải dữ kiện lịch sử và không hardcode kết quả lịch sử.

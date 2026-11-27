@@ -1,6 +1,6 @@
 # Kế hoạch phát triển trên bản đồ Việt Nam
 
-Nhánh development/operation-ww3 được tạo trong bản sao riêng. Nền nhiều người chơi sử dụng bản đồ 1955 đã nghiệm thu. Bản chơi đơn hiện đại độc lập nằm ở ../BAN-DO-VIET-NAM.html tính từ thư mục gốc của bản sao. Các mốc dưới đây áp dụng cho bản nhiều người chơi. Nhóm thử nghiệm, tệp và commit đã hoàn thành được ghi ở DEVELOPMENT_PROGRESS.md. Dấu — biểu thị hạng mục chưa có commit triển khai được xác minh ở nhánh này.
+Nhánh development/operation-ww3 được tạo trong bản sao riêng. Nền nhiều người chơi sử dụng bản đồ 1955 đã nghiệm thu. Bản chơi đơn hiện đại mở từ index.html ở gốc repo và dùng mã trong campaign/. Các mốc dưới đây áp dụng cho bản nhiều người chơi. Nhóm thử nghiệm, tệp và commit đã hoàn thành được ghi ở DEVELOPMENT_PROGRESS.md. Dấu — biểu thị hạng mục chưa có commit triển khai được xác minh ở nhánh này.
 
 | ID | Hạng mục | Phụ thuộc | Ưu tiên | Trạng thái | Điều kiện nghiệm thu còn phải đáp ứng hoặc duy trì |
 |---|---|---|---|---|---|

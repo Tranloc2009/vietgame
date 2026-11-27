@@ -6,6 +6,9 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    build: {
+      rolldownOptions: {input: {campaign: 'index.html', rooms: 'rooms.html'}},
+    },
     plugins: [
       react(),
       tailwindcss(),

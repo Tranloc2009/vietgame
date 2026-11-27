@@ -29,7 +29,7 @@ const { chromium } = require("playwright");
     await page.route("https://fonts.googleapis.com/**", (route) =>
       route.abort(),
     );
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/rooms.html", { waitUntil: "domcontentloaded" });
     await page.getByTestId("topbar-open-rooms").click();
     await page.getByTestId("auth-username").fill(name);
     await page
