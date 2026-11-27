@@ -329,6 +329,9 @@ export function assertSimulationInvariants(state: MatchState): void {
           `campaignState city "${city.cityId}" owner "${city.ownerNationId}" diverges from region controller "${state.regions[city.cityId].controllerNationId}"`
         );
       }
+      if (city.morale !== undefined && (city.morale < 0 || city.morale > 100)) {
+        violations.push(`campaignState city "${city.cityId}" invalid morale=${city.morale}`);
+      }
       const buildJobs = city.jobs.filter((j) => j.lane === 'build');
       const mobilizeJobs = city.jobs.filter((j) => j.lane === 'mobilize');
       if (buildJobs.length > 1) {

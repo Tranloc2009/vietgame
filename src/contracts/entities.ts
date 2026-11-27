@@ -803,6 +803,16 @@ export const DomainEventPayloadSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
+      type: z.literal('CAMPAIGN_CITY_UPRISING'),
+      cityId: RegionIdSchema,
+      cityName: z.string(),
+      previousOwnerNationId: NationIdSchema,
+      newOwnerNationId: NationIdSchema,
+      newOwnerVp: z.number().int().min(0),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('CAMPAIGN_MATCH_ENDED'),
       winnerNationId: NationIdSchema,
       winnerSlot: HumanSlotSchema,

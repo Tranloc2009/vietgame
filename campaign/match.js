@@ -228,6 +228,8 @@ function renderCity(c) {
     if (c.hospital) bParts.push("Quân y " + c.hospital);
     if (c.airbase) bParts.push("Không quân " + c.airbase);
     if (c.port) bParts.push("Quân cảng " + c.port);
+    const morale = c.morale ?? 85;
+    const lowMorale = morale < 50;
     return (
       '<div class="cityStats"><div><small>Sản lượng' +
       (c.coastal ? ' · <span class="coastalTag">Ven biển</span>' : "") +
@@ -240,13 +242,17 @@ function renderCity(c) {
       (defBonus ? " · Thủ +" + defBonus + "%" : "") +
       "</small><b>" +
       (bParts.length ? bParts.join(" · ") : num(totalBuildings) + " cấp") +
-      "</b></div><div><small>Lực lượng</small><b>" +
+      "</b></div><div><small>Tinh thần" +
+      (lowMorale ? ' · <span class="moraleWarn">Bất ổn!</span>' : "") +
+      '</small><b>' +
+      morale +
+      "% · " +
       num(
         live.units.filter(
           (u) => u.city === selected.name && u.owned !== false,
         ).length,
       ) +
-      ' đơn vị</b></div></div><p class="queueLine">' +
+      ' quân</b></div></div><p class="queueLine">' +
       (c.jobs.length
         ? c.jobs
             .map(
@@ -334,15 +340,19 @@ function renderCity(c) {
               st.hardAttack +
               " · Thủ " +
               st.defense +
-              (st.domain === "AIR"
-                ? " · Không kích 2.0°"
-                : st.domain === "NAVAL"
-                  ? " · Hải pháo 1.5°"
-                  : st.ranged
-                    ? " · Pháo 1.25°"
-                    : st.canConquer
-                      ? " · Chiếm đất"
-                      : " · Xung kích") +
+              (st.airOnlyRanged
+                ? " · Phòng không 1.6° (" + st.airAttack + " PK)"
+                : st.stealth
+                  ? " · Ngư lôi 1.35° · Tàng hình"
+                  : st.domain === "AIR"
+                    ? " · Không kích 2.0°"
+                    : st.domain === "NAVAL"
+                      ? " · Hải pháo 1.5°"
+                      : st.ranged
+                        ? " · Pháo 1.25°"
+                        : st.canConquer
+                          ? " · Chiếm đất"
+                          : " · Xung kích") +
               "</div>"
             : "";
       return (

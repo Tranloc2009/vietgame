@@ -462,9 +462,18 @@ async function shutdownServer(server: BootedServer): Promise<void> {
         assert.ok(guideText.includes('Tiến độ chỉ huy'));
         await press(pNorth, '[data-close="guide"]');
 
-        // T06 UI Check: Airbase + Coastal Port check on Đà Nẵng + Stack Merge & Split!
+        // T06/T07 UI Check: Airbase + Coastal Port + City Morale on Đà Nẵng + SAM/Submarine in Research + Stack Merge & Split!
+        await press(pNorth, '#menuStudy');
+        const studyHtmlText = (await pNorth.locator('#nationalBody').textContent()) || '';
+        assert.ok(studyHtmlText.includes('Tên lửa phòng không SAM I'));
+        assert.ok(studyHtmlText.includes('Tàu ngầm tấn công I'));
+        await press(pNorth, '[data-close="national"]');
+
         await press(pNorth, '#menuCity');
         await pNorth.locator('.townRow').filter({ hasText: 'Đà Nẵng' }).click();
+        await press(pNorth, '[data-city-tab="summary"]');
+        const citySummaryText = (await pNorth.locator('#cityBody').textContent()) || '';
+        assert.ok(citySummaryText.includes('Tinh thần'));
         await press(pNorth, '[data-city-tab="build"]');
         const buildHtmlText = (await pNorth.locator('#cityBody').textContent()) || '';
         assert.ok(buildHtmlText.includes('Căn cứ không quân'));
@@ -549,11 +558,14 @@ async function shutdownServer(server: BootedServer): Promise<void> {
         const replay = server.store.verifyMatchReplay(matchId);
         assert.equal(replay?.verified, true);
 
-        // T06 UI Check (desktop): 1-click "Đấu với Máy (AI)" mode starts immediately & AI runs autonomously!
+        // T06/T07 UI Check (desktop): Leaderboard visible in #mpPanel + 1-click "Đấu với Máy (AI)" mode starts immediately!
         let aiMatchVerified = 'bỏ qua (chỉ kiểm trên desktop)';
         if (vp.name === 'desktop') {
           await press(pNorth, '[data-dismiss-victory="1"]');
           await press(pNorth, '#menuOnline');
+          await pNorth.locator('.lbTable').waitFor({ state: 'visible', timeout: 10000 });
+          const lbText = (await pNorth.locator('.lbTable').textContent()) || '';
+          assert.ok(lbText.includes('Chỉ huy Phương Bắc'));
           await press(pNorth, '#mpLeaveBtn');
           await pNorth.locator('#mpCreateAiRoom').waitFor({ state: 'visible' });
           await press(pNorth, '#mpCreateAiRoom');

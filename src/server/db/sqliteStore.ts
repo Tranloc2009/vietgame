@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   ActorIdSchema,
   asUtcEpochMs,
@@ -1660,6 +1662,185 @@ export class SqliteMatchStore {
       replayedCommandCount: replayed.replayedCount,
       version: matchRow.version,
     };
+  }
+
+  public getLeaderboard(limit = 20): Array<{
+    userId: string;
+    username: string;
+    displayName: string;
+    wins: number;
+    losses: number;
+    activeMatches: number;
+    matchesPlayed: number;
+    winRatePct: number;
+    totalCitiesCaptured: number;
+    totalEnemyUnitsDestroyed: number;
+  }> {
+    const users = this.db
+      .prepare(
+        `SELECT user_id, username, display_name
+         FROM users
+         WHERE user_id != 'usr_ai_commander'`
+      )
+      .all() as Array<{ user_id: string; username: string; display_name: string }>;
+
+    const statsMap = new Map<
+      string,
+      {
+        userId: string;
+        username: string;
+        displayName: string;
+        wins: number;
+        losses: number;
+        activeMatches: number;
+        matchesPlayed: number;
+        totalCitiesCaptured: number;
+        totalEnemyUnitsDestroyed: number;
+      }
+    >();
+    for (const u of users) {
+      statsMap.set(u.user_id, {
+        userId: u.user_id,
+        username: u.username,
+        displayName: u.display_name,
+        wins: 0,
+        losses: 0,
+        activeMatches: 0,
+        matchesPlayed: 0,
+        totalCitiesCaptured: 0,
+        totalEnemyUnitsDestroyed: 0,
+      });
+    }
+
+    const rooms = this.db
+      .prepare(
+        `SELECT r.match_id, r.status, r.winner_slot, r.north_user_id, r.south_user_id, m.current_state_json
+         FROM match_rooms r
+         JOIN matches m ON m.match_id = r.match_id`
+      )
+      .all() as Array<{
+      match_id: string;
+      status: RoomStatus;
+      winner_slot: HumanSlot | null;
+      north_user_id: string | null;
+      south_user_id: string | null;
+      current_state_json: string;
+    }>;
+
+    for (const r of rooms) {
+      let northStats: { citiesCaptured?: number; enemyUnitsDestroyed?: number } | null = null;
+      let southStats: { citiesCaptured?: number; enemyUnitsDestroyed?: number } | null = null;
+      try {
+        const parsed = JSON.parse(r.current_state_json) as {
+          campaignState?: {
+            nations?: Record<string, { stats?: { citiesCaptured?: number; enemyUnitsDestroyed?: number } }>;
+          };
+        };
+        northStats = parsed.campaignState?.nations?.[WORLD_NATIONS.north]?.stats ?? null;
+        southStats = parsed.campaignState?.nations?.[WORLD_NATIONS.south]?.stats ?? null;
+      } catch {
+        // Ignore malformed legacy rows
+      }
+
+      const applySlot = (
+        userId: string | null,
+        slot: HumanSlot,
+        slotStats: { citiesCaptured?: number; enemyUnitsDestroyed?: number } | null
+      ) => {
+        if (!userId) return;
+        const entry = statsMap.get(userId);
+        if (!entry) return;
+        if (r.status === 'ACTIVE') entry.activeMatches += 1;
+        if (r.status === 'ENDED') {
+          entry.matchesPlayed += 1;
+          if (r.winner_slot === slot) entry.wins += 1;
+          else if (r.winner_slot !== null) entry.losses += 1;
+        }
+        entry.totalCitiesCaptured += slotStats?.citiesCaptured ?? 0;
+        entry.totalEnemyUnitsDestroyed += slotStats?.enemyUnitsDestroyed ?? 0;
+      };
+
+      applySlot(r.north_user_id, 'NORTH', northStats);
+      applySlot(r.south_user_id, 'SOUTH', southStats);
+    }
+
+    return Array.from(statsMap.values())
+      .map((e) => ({
+        ...e,
+        winRatePct: e.matchesPlayed > 0 ? Math.round((e.wins * 100) / e.matchesPlayed) : 0,
+      }))
+      .sort(
+        (a, b) =>
+          b.wins - a.wins ||
+          b.totalCitiesCaptured - a.totalCitiesCaptured ||
+          b.totalEnemyUnitsDestroyed - a.totalEnemyUnitsDestroyed ||
+          b.activeMatches - a.activeMatches ||
+          (a.username < b.username ? -1 : 1)
+      )
+      .slice(0, Math.max(1, Math.min(100, limit)));
+  }
+
+  public getOperationalStats(): {
+    totalRooms: number;
+    activeRooms: number;
+    endedRooms: number;
+    totalUsers: number;
+    walMode: boolean;
+    dbSizeBytes: number;
+  } {
+    const roomCounts = this.db
+      .prepare(
+        `SELECT
+           COUNT(*) AS total,
+           SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) AS active,
+           SUM(CASE WHEN status = 'ENDED' THEN 1 ELSE 0 END) AS ended
+         FROM match_rooms`
+      )
+      .get() as { total: number; active: number | null; ended: number | null };
+    const userCount = this.db
+      .prepare(`SELECT COUNT(*) AS cnt FROM users WHERE user_id != 'usr_ai_commander'`)
+      .get() as { cnt: number };
+    const journalRow = this.db.pragma('journal_mode') as Array<{ journal_mode?: string }>;
+    const walMode = String(journalRow?.[0]?.journal_mode ?? '').toLowerCase() === 'wal';
+    let dbSizeBytes = 0;
+    if (this.dbPath !== ':memory:' && fs.existsSync(this.dbPath)) {
+      try {
+        dbSizeBytes = fs.statSync(this.dbPath).size;
+      } catch {}
+    }
+    return {
+      totalRooms: roomCounts.total ?? 0,
+      activeRooms: roomCounts.active ?? 0,
+      endedRooms: roomCounts.ended ?? 0,
+      totalUsers: userCount.cnt ?? 0,
+      walMode,
+      dbSizeBytes,
+    };
+  }
+
+  public hotBackupToFile(destPath: string): {
+    backupPath: string;
+    sizeBytes: number;
+    integrityOk: boolean;
+  } {
+    const resolved = path.resolve(destPath);
+    fs.mkdirSync(path.dirname(resolved), { recursive: true });
+    if (fs.existsSync(resolved)) {
+      fs.unlinkSync(resolved);
+    }
+    const escaped = resolved.replace(/'/g, "''");
+    this.db.exec(`VACUUM INTO '${escaped}'`);
+
+    const checkDb = new Database(resolved, { readonly: true });
+    let integrityOk = false;
+    try {
+      const res = checkDb.pragma('integrity_check') as Array<{ integrity_check?: string }>;
+      integrityOk = res.length === 1 && res[0]?.integrity_check === 'ok';
+    } finally {
+      checkDb.close();
+    }
+    const sizeBytes = fs.statSync(resolved).size;
+    return { backupPath: resolved, sizeBytes, integrityOk };
   }
 
   public close(): void {

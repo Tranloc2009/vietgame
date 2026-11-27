@@ -2,6 +2,7 @@ node_modules/
 dist/
 kiem-thu/
 data/
+backups/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

@@ -215,15 +215,19 @@ function renderArmy() {
     ? stackMembers.reduce((a, m) => a + (unitStats[m.key]?.defense || 0), 0)
     : st.defense;
   const roleTag =
-    st.domain === "AIR"
-      ? " · Không kích 2.0°"
-      : st.domain === "NAVAL"
-        ? " · Hải pháo 1.5°"
-        : st.ranged
-          ? " · Pháo 1.25°"
-          : st.canConquer
-            ? " · Chiếm đất"
-            : "";
+    st.airOnlyRanged
+      ? " · Phòng không 1.6°"
+      : st.stealth
+        ? " · Ngư lôi 1.35° · Tàng hình"
+        : st.domain === "AIR"
+          ? " · Không kích 2.0°"
+          : st.domain === "NAVAL"
+            ? " · Hải pháo 1.5°"
+            : st.ranged
+              ? " · Pháo 1.25°"
+              : st.canConquer
+                ? " · Chiếm đất"
+                : "";
   const statMeta =
     " · Công " + sumSoft + "/" + sumHard + " · Thủ " + sumDef + roleTag;
   const atWar = live.online && live.diplomacy?.relation === "WAR";

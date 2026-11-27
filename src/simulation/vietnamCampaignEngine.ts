@@ -7,9 +7,12 @@ import {
   CAMPAIGN_HEAL_TICK_MS,
   CAMPAIGN_HOUR_MS,
   CAMPAIGN_MELEE_RANGE_DEG,
+  CAMPAIGN_MORALE_TICK_MS,
   CAMPAIGN_NAVAL_RANGE_DEG,
   CAMPAIGN_OBSERVATION_RADIUS_DEG,
   CAMPAIGN_RANGED_RANGE_DEG,
+  CAMPAIGN_SAM_RANGE_DEG,
+  CAMPAIGN_SUB_RANGE_DEG,
   CampaignBattleReport,
   CampaignCityJob,
   CampaignCityState,
@@ -121,6 +124,16 @@ export const CAMPAIGN_DOCTRINE_CATALOG: Readonly<Record<CampaignDoctrineKey, Cam
     seconds: 60,
     requires: 'motor',
   },
+  sam: {
+    key: 'sam',
+    branch: 'SUPPORT',
+    tier: 2,
+    name: 'Tên lửa phòng không SAM I',
+    description: 'Mở hệ thống phòng không SAM bắn hạ tiêm kích tầm 1.6° và tăng hỏa lực đánh chặn (+6 ST).',
+    cost: [190, 170, 40, 110, 90, 0, 390],
+    seconds: 65,
+    requires: 'artillery',
+  },
   fighter: {
     key: 'fighter',
     branch: 'AIR',
@@ -140,6 +153,16 @@ export const CAMPAIGN_DOCTRINE_CATALOG: Readonly<Record<CampaignDoctrineKey, Cam
     cost: [170, 180, 90, 70, 60, 0, 360],
     seconds: 60,
     requires: null,
+  },
+  submarine: {
+    key: 'submarine',
+    branch: 'NAVAL',
+    tier: 2,
+    name: 'Tàu ngầm tấn công I',
+    description: 'Mở tàu ngầm tàng hình tại Quân cảng cấp 2: diệt hạm vượt trội (14 giáp), ẩn khỏi radar thường.',
+    cost: [180, 210, 100, 90, 80, 0, 440],
+    seconds: 70,
+    requires: 'corvette',
   },
 };
 
@@ -244,6 +267,13 @@ export const CAMPAIGN_PROJECT_CATALOG: Readonly<Record<CampaignProjectKey, Campa
     seconds: 60,
     cost: [190, 140, 30, 50, 30, 75, 330],
   },
+  sam: {
+    key: 'sam',
+    label: 'Tên lửa phòng không SAM',
+    lane: 'mobilize',
+    seconds: 65,
+    cost: [170, 180, 40, 90, 60, 60, 410],
+  },
   fighter: {
     key: 'fighter',
     label: 'Tiêm kích đánh chặn',
@@ -258,6 +288,13 @@ export const CAMPAIGN_PROJECT_CATALOG: Readonly<Record<CampaignProjectKey, Campa
     seconds: 65,
     cost: [170, 190, 100, 60, 40, 70, 400],
   },
+  submarine: {
+    key: 'submarine',
+    label: 'Tàu ngầm tấn công',
+    lane: 'mobilize',
+    seconds: 70,
+    cost: [180, 220, 110, 90, 70, 65, 480],
+  },
 };
 
 export interface CampaignUnitCombatSpec {
@@ -267,10 +304,13 @@ export interface CampaignUnitCombatSpec {
   readonly maxHp: number;
   readonly softAttack: number;
   readonly hardAttack: number;
+  readonly airAttack?: number;
   readonly defense: number;
   readonly moveSeconds: number;
   readonly canConquer: boolean;
   readonly ranged: boolean;
+  readonly airOnlyRanged?: boolean;
+  readonly stealth?: boolean;
   readonly rangedRangeDeg: number;
   readonly upkeepSupplies: number;
   readonly upkeepFuel: number;
@@ -388,6 +428,29 @@ export const CAMPAIGN_UNIT_STATS: Readonly<Record<CampaignUnitKey, CampaignUnitC
     requiredAirbase: 0,
     requiredPort: 0,
   },
+  sam: {
+    key: 'sam',
+    domain: 'LAND',
+    armorClass: 'HARD',
+    maxHp: 20,
+    softAttack: 2,
+    hardAttack: 4,
+    airAttack: 14,
+    defense: 6,
+    moveSeconds: 36,
+    canConquer: false,
+    ranged: true,
+    airOnlyRanged: true,
+    rangedRangeDeg: CAMPAIGN_SAM_RANGE_DEG,
+    upkeepSupplies: 1,
+    upkeepFuel: 1,
+    upkeepMoney: 5,
+    requiredDoctrine: 'sam',
+    requiredOffice: 1,
+    requiredBase: 2,
+    requiredAirbase: 0,
+    requiredPort: 0,
+  },
   fighter: {
     key: 'fighter',
     domain: 'AIR',
@@ -430,6 +493,28 @@ export const CAMPAIGN_UNIT_STATS: Readonly<Record<CampaignUnitKey, CampaignUnitC
     requiredAirbase: 0,
     requiredPort: 1,
   },
+  submarine: {
+    key: 'submarine',
+    domain: 'NAVAL',
+    armorClass: 'HARD',
+    maxHp: 30,
+    softAttack: 4,
+    hardAttack: 14,
+    defense: 8,
+    moveSeconds: 26,
+    canConquer: false,
+    ranged: true,
+    stealth: true,
+    rangedRangeDeg: CAMPAIGN_SUB_RANGE_DEG,
+    upkeepSupplies: 1,
+    upkeepFuel: 2,
+    upkeepMoney: 7,
+    requiredDoctrine: 'submarine',
+    requiredOffice: 1,
+    requiredBase: 0,
+    requiredAirbase: 0,
+    requiredPort: 2,
+  },
 };
 
 export const CAMPAIGN_MOVE_DURATION_SECONDS = {
@@ -439,8 +524,10 @@ export const CAMPAIGN_MOVE_DURATION_SECONDS = {
   recon: 22,
   tank: 36,
   artillery: 42,
+  sam: 36,
   fighter: 14,
   corvette: 28,
+  submarine: 26,
 } as const;
 
 const CAMPAIGN_SPINE_CITY_NAMES: readonly string[] = [
@@ -535,6 +622,8 @@ function cloneCampaignState(state: CampaignMatchState): MutableCampaignState {
       hospital: c.hospital ?? 0,
       airbase: c.airbase ?? 0,
       port: c.port ?? 0,
+      morale: c.morale ?? 85,
+      lastMoraleUtc: c.lastMoraleUtc ?? state.startUtc,
       jobs: c.jobs.map((j) => ({
         ...j,
         cost: [...j.cost] as CampaignResourceTuple,
@@ -627,6 +716,8 @@ export function computeCampaignVictoryPoints(
 }
 
 export function computeCampaignCityOutput(city: CampaignCityState): CampaignResourceTuple {
+  const morale = city.morale ?? 85;
+  const factorPct = morale >= 60 ? 100 : morale >= 35 ? 80 : 60;
   const output: [number, number, number, number, number, number, number] = [
     0,
     0,
@@ -634,9 +725,9 @@ export function computeCampaignCityOutput(city: CampaignCityState): CampaignReso
     0,
     0,
     2 + city.office * 2,
-    8,
+    Math.floor((8 * factorPct) / 100),
   ];
-  output[city.material] = 10 + 5 * city.factory;
+  output[city.material] = Math.floor(((10 + 5 * city.factory) * factorPct) / 100);
   return output;
 }
 
@@ -881,9 +972,11 @@ function computeUnitAttackDamage(
 
   let baseStat = isCounterDefense
     ? atkSpec.defense
-    : defSpec.armorClass === 'HARD'
-      ? atkSpec.hardAttack
-      : atkSpec.softAttack;
+    : defSpec.domain === 'AIR' && atkSpec.airAttack !== undefined
+      ? atkSpec.airAttack
+      : defSpec.armorClass === 'HARD'
+        ? atkSpec.hardAttack
+        : atkSpec.softAttack;
   baseStat = Math.floor((baseStat * motor2Boost) / 100);
 
   const hpPct = Math.max(25, Math.floor((attacker.hp * 100) / attacker.maxHp));
@@ -938,6 +1031,9 @@ function findNextDueCombatOrHealUtc(
           break;
         }
         if (spec.ranged && !u.trip && unitRangedSq > 0 && dSq <= unitRangedSq) {
+          if (spec.airOnlyRanged && CAMPAIGN_UNIT_STATS[other.key].domain !== 'AIR') {
+            continue;
+          }
           if (isTargetObservedByNation(cs, u.ownerNationId, posMap.get(other.unitId)!, atUtc)) {
             hasHostileRanged = true;
           }
@@ -958,6 +1054,14 @@ function findNextDueCombatOrHealUtc(
     if (!city || city.ownerNationId !== u.ownerNationId || (city.hospital ?? 0) < 1) continue;
     const baseUtc = (u.lastHealUtc ?? cs.timeUtc) as number;
     consider(baseUtc + CAMPAIGN_HEAL_TICK_MS);
+  }
+
+  for (const city of Object.values(cs.cities)) {
+    const morale = city.morale ?? 85;
+    if (morale < 100) {
+      const mBase = (city.lastMoraleUtc ?? cs.startUtc) as number;
+      consider(mBase + CAMPAIGN_MORALE_TICK_MS);
+    }
   }
 
   if (cs.aiControlledNationId && !cs.victory) {
@@ -1046,6 +1150,8 @@ function runCampaignAiStep(
       'artillery',
       'fighter',
       'corvette',
+      'sam',
+      'submarine',
       'motor2',
       'tank',
     ];
@@ -1517,6 +1623,9 @@ function resolveCombatAtStep(
     const candidates = Object.values(cs.units)
       .filter((other) => {
         if (other.ownerNationId === arty.ownerNationId) return false;
+        if (spec.airOnlyRanged && CAMPAIGN_UNIT_STATS[other.key].domain !== 'AIR') {
+          return false;
+        }
         const otherPos = interpolateCampaignUnitPosition(other, nowNum);
         const dSq = distSqDeg(artyPos, otherPos);
         if (dSq > unitRangedSq) return false;
@@ -1524,18 +1633,37 @@ function resolveCombatAtStep(
       })
       .map((other) => ({
         unit: other,
+        navalBonus:
+          arty.key === 'submarine' && CAMPAIGN_UNIT_STATS[other.key].domain === 'NAVAL' ? 0 : 1,
         dSq: distSqDeg(artyPos, interpolateCampaignUnitPosition(other, nowNum)),
       }))
-      .sort((a, b) => a.dSq - b.dSq || (a.unit.unitId < b.unit.unitId ? -1 : 1));
+      .sort(
+        (a, b) =>
+          a.navalBonus - b.navalBonus ||
+          a.dSq - b.dSq ||
+          (a.unit.unitId < b.unit.unitId ? -1 : 1)
+      );
 
     const chosen = candidates[0]?.unit;
     if (!chosen) continue;
 
     const dmg = computeUnitAttackDamage(cs, arty, chosen, false);
     const isAirStrike = spec.domain === 'AIR';
-    const flakDmg = isAirStrike
+    let flakDmg = isAirStrike
       ? Math.max(1, Math.floor(computeUnitAttackDamage(cs, chosen, arty, true) / 4))
       : 0;
+    if (isAirStrike) {
+      const targetPosCheck = interpolateCampaignUnitPosition(chosen, nowNum);
+      const samSq = CAMPAIGN_SAM_RANGE_DEG * CAMPAIGN_SAM_RANGE_DEG;
+      const hasSamCover = Object.values(cs.units).some(
+        (u) =>
+          u.ownerNationId !== arty.ownerNationId &&
+          u.key === 'sam' &&
+          !u.trip &&
+          distSqDeg(interpolateCampaignUnitPosition(u, nowNum), targetPosCheck) <= samSq
+      );
+      if (hasSamCover) flakDmg += 6;
+    }
     arty.lastCombatUtc = stepUtc;
     chosen.hp = Math.max(0, chosen.hp - dmg);
     chosen.lastHealUtc = stepUtc;
@@ -1588,9 +1716,13 @@ function resolveCombatAtStep(
     cs.nextReportNumber += 1;
     const strikeLabel = isAirStrike
       ? 'Không kích'
-      : spec.domain === 'NAVAL'
-        ? 'Hải pháo'
-        : 'Pháo kích';
+      : arty.key === 'sam'
+        ? 'Tên lửa phòng không SAM'
+        : arty.key === 'submarine'
+          ? 'Ngư lôi tàu ngầm'
+          : spec.domain === 'NAVAL'
+            ? 'Hải pháo'
+            : 'Pháo kích';
     const reportKind: 'BOMBARDMENT' | 'AIRSTRIKE' = isAirStrike ? 'AIRSTRIKE' : 'BOMBARDMENT';
     const summary =
       `${strikeLabel} từ ${nationLabelVi(arty.ownerNationId)} (#${arty.displayNumber}) vào ${locationName} gây ${dmg} ST` +
@@ -1680,6 +1812,8 @@ function resolveConquestAndVictoryAtStep(
     city.ownerNationId = newOwner;
     city.jobs = []; // Destroy/cancel defeated owner's in-progress city queues
     city.bunker = Math.max(0, (city.bunker ?? 0) - 1);
+    city.morale = 35;
+    city.lastMoraleUtc = stepUtc;
     city.reserve = 0;
 
     if (regionsRecord[city.cityId]) {
@@ -1800,6 +1934,88 @@ function resolveConquestAndVictoryAtStep(
         },
       });
       break;
+    }
+  }
+}
+
+function resolveMoraleAtStep(
+  cs: MutableCampaignState,
+  regionsRecord: Record<string, Region>,
+  stepUtc: UtcEpochMs,
+  drafts: CampaignPendingEventDraft[]
+): void {
+  const nowNum = stepUtc as number;
+  const meleeSq = CAMPAIGN_MELEE_RANGE_DEG * CAMPAIGN_MELEE_RANGE_DEG;
+  const nationIds = Object.keys(cs.nations).sort();
+  const sortedCities = Object.values(cs.cities).sort((a, b) =>
+    a.cityId < b.cityId ? -1 : a.cityId > b.cityId ? 1 : 0
+  );
+
+  for (const city of sortedCities) {
+    const curMorale = city.morale ?? 85;
+    if (curMorale >= 100) continue;
+    const lastNum = (city.lastMoraleUtc ?? cs.startUtc) as number;
+    if (lastNum + CAMPAIGN_MORALE_TICK_MS > nowNum) continue;
+
+    city.lastMoraleUtc = stepUtc;
+    const hasGarrison = Object.values(cs.units).some(
+      (u) =>
+        u.ownerNationId === city.ownerNationId &&
+        u.trip === null &&
+        (u.cityId === city.cityId || distSqDeg(u.position, city) <= meleeSq)
+    );
+
+    if (curMorale < 50 && !hasGarrison) {
+      city.morale = Math.max(0, curMorale - 5);
+      if (city.morale <= 20) {
+        const previousOwner = city.ownerNationId;
+        const rebelOwner = nationIds.find((id) => id !== previousOwner) as NationId | undefined;
+        if (rebelOwner) {
+          city.ownerNationId = rebelOwner;
+          city.morale = 50;
+          city.jobs = [];
+          city.reserve = 0;
+          if (regionsRecord[city.cityId]) {
+            regionsRecord[city.cityId] = {
+              ...regionsRecord[city.cityId],
+              controllerNationId: rebelOwner,
+            };
+          }
+          cs.victoryPointsByNation = computeCampaignVictoryPoints(cs.cities, nationIds);
+          const newOwnerVp = cs.victoryPointsByNation[rebelOwner] ?? 0;
+          appendCampaignLog(
+            cs.log,
+            stepUtc,
+            previousOwner,
+            city.cityId,
+            city.name,
+            `Khởi nghĩa nổ ra tại ${city.name} do thiếu quân đồn trú giữ trật tự!`
+          );
+          appendCampaignNews(
+            cs,
+            stepUtc,
+            'CONQUEST',
+            `Khởi nghĩa tại ${city.name}!`,
+            `Do tinh thần giảm xuống thấp mà không có quân đồn trú, ${city.name} đã trở về quyền kiểm soát của ${nationLabelVi(rebelOwner)} (${newOwnerVp} VP).`
+          );
+          drafts.push({
+            occurredAtUtc: stepUtc,
+            tieBreakPriority: 17,
+            tieBreakKey: `uprising:${city.cityId}`,
+            payload: {
+              type: 'CAMPAIGN_CITY_UPRISING',
+              cityId: city.cityId,
+              cityName: city.name,
+              previousOwnerNationId: previousOwner,
+              newOwnerNationId: rebelOwner,
+              newOwnerVp,
+            },
+          });
+        }
+      }
+    } else {
+      const gain = 8 + (city.hospital ?? 0) * 4 + (city.bunker ?? 0) * 4;
+      city.morale = Math.min(100, curMorale + gain);
     }
   }
 }
@@ -2082,9 +2298,10 @@ function settleCampaignInPlace(
     // 5. Resolve conquest & victory
     resolveConquestAndVictoryAtStep(cs, unitsRecord, regionsRecord, nationsMeta, stepUtc, drafts);
 
-    // 6. Hospital healing & Deterministic AI Commander step
+    // 6. Hospital healing, City Morale & Deterministic AI Commander step
     if (!cs.victory) {
       resolveHospitalHealingAtStep(cs, unitsRecord, stepUtc);
+      resolveMoraleAtStep(cs, regionsRecord, stepUtc, drafts);
       runCampaignAiStep(cs, unitsRecord, stepUtc, drafts);
     }
 

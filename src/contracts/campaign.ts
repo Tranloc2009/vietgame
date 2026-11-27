@@ -21,9 +21,12 @@ export const CAMPAIGN_OBSERVATION_RADIUS_DEG = 1.25;
 export const CAMPAIGN_MELEE_RANGE_DEG = 0.09; // ~10 km; strictly below min 0.118° inter-city spacing
 export const CAMPAIGN_RANGED_RANGE_DEG = 1.25;
 export const CAMPAIGN_NAVAL_RANGE_DEG = 1.5;
+export const CAMPAIGN_SAM_RANGE_DEG = 1.6;
+export const CAMPAIGN_SUB_RANGE_DEG = 1.35;
 export const CAMPAIGN_AIR_RANGE_DEG = 2.0;
 export const CAMPAIGN_COMBAT_TICK_MS = 10_000;
 export const CAMPAIGN_HEAL_TICK_MS = 30_000;
+export const CAMPAIGN_MORALE_TICK_MS = 60_000;
 export const CAMPAIGN_AI_DECISION_INTERVAL_MS = 20_000;
 export const CAMPAIGN_VICTORY_TARGET_VP = 400;
 
@@ -55,8 +58,10 @@ export const CampaignDoctrineKeySchema = z.enum([
   'recon',
   'tank',
   'artillery',
+  'sam',
   'fighter',
   'corvette',
+  'submarine',
 ]);
 export type CampaignDoctrineKey = z.infer<typeof CampaignDoctrineKeySchema>;
 
@@ -73,8 +78,10 @@ export const CampaignProjectKeySchema = z.enum([
   'recon',
   'tank',
   'artillery',
+  'sam',
   'fighter',
   'corvette',
+  'submarine',
 ]);
 export type CampaignProjectKey = z.infer<typeof CampaignProjectKeySchema>;
 
@@ -84,8 +91,10 @@ export const CampaignUnitKeySchema = z.enum([
   'recon',
   'tank',
   'artillery',
+  'sam',
   'fighter',
   'corvette',
+  'submarine',
 ]);
 export type CampaignUnitKey = z.infer<typeof CampaignUnitKeySchema>;
 
@@ -151,6 +160,8 @@ export const CampaignCityStateSchema = z
     hospital: z.number().int().min(0).default(0),
     airbase: z.number().int().min(0).default(0),
     port: z.number().int().min(0).default(0),
+    morale: z.number().int().min(0).max(100).default(85),
+    lastMoraleUtc: UtcEpochMsSchema.nullable().default(null),
     reserve: z.number().int().min(0),
     jobs: z.array(CampaignCityJobSchema),
   })
@@ -309,6 +320,9 @@ export function getCampaignUnitVisionRadiusDeg(key: CampaignUnitKey): number {
       return 2.25;
     case 'corvette':
       return 2.0;
+    case 'sam':
+    case 'submarine':
+      return 1.8;
     case 'artillery':
       return 1.45;
     case 'motor':

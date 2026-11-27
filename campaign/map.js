@@ -277,17 +277,25 @@ function draw() {
         const strikeDeg = st.rangedRangeDeg || 1.25;
         ctx.setLineDash([3, 3]);
         ctx.strokeStyle =
-          st.domain === "AIR"
-            ? "#7fc7ffaa"
-            : st.domain === "NAVAL"
-              ? "#6bd4c8aa"
-              : "#f28b6b99";
+          st.airOnlyRanged
+            ? "#7be495bb"
+            : st.stealth
+              ? "#4cc9f0bb"
+              : st.domain === "AIR"
+                ? "#7fc7ffaa"
+                : st.domain === "NAVAL"
+                  ? "#6bd4c8aa"
+                  : "#f28b6b99";
         ctx.fillStyle =
-          st.domain === "AIR"
-            ? "#3c8ed118"
-            : st.domain === "NAVAL"
-              ? "#2da49918"
-              : "#c94c3818";
+          st.airOnlyRanged
+            ? "#34a85318"
+            : st.stealth
+              ? "#1b89b81c"
+              : st.domain === "AIR"
+                ? "#3c8ed118"
+                : st.domain === "NAVAL"
+                  ? "#2da49918"
+                  : "#c94c3818";
         ctx.lineWidth = 1.8;
         ctx.beginPath();
         ctx.ellipse(ux, uy, strikeDeg * sx, strikeDeg * sy, 0, 0, Math.PI * 2);

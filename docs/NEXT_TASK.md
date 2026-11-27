@@ -1,12 +1,9 @@
 # Điểm tiếp tục
 
-Mốc **T06 (Không/Hải quân, Gộp/Tách đạo quân, Bộ Tư Lệnh Máy AI tất định, Rate-Limiting HTTP/WS, Tối ưu Chunk Vite, Âm thanh tổng hợp Web Audio & Hướng dẫn tương tác trên bản đồ Việt Nam mới ở `/`)** đã hoàn thành và kiểm thử thực chạy trên **62/62** bài tự động cùng cả 3 bộ kiểm thử trình duyệt Microsoft Edge (`1440×900`, `390×844` cảm ứng, `844×390` cảm ứng) và hồi quy đầy đủ cho chơi đơn IndexedDB + `/rooms.html`.
+Mốc **T07 (Tinh thần thành phố & Nổi dậy, SAM phòng không, Tàu ngầm tàng hình, Bảng xếp hạng chỉ huy, Metrics vận hành, Hot Backup SQLite, Tài liệu triển khai Production, Stress Test 12 phòng đồng thời & Soak Test 72 giờ)** đã hoàn thành và kiểm thử thực chạy trên **67/67** bài tự động, CLI hot backup trực tiếp trên DB WAL đang mở và cả 3 bộ kiểm thử trình duyệt Microsoft Edge (`1440×900`, `390×844` cảm ứng, `844×390` cảm ứng) cùng hồi quy đầy đủ cho chơi đơn IndexedDB + `/rooms.html`.
 
-**T07 · P2 · Kiểm thử tải nhiều phòng, Tinh chỉnh cân bằng chiến dịch & Chuẩn bị Release Candidate**
+Dự án hiện đạt trạng thái **Release Candidate (RC1)** trên nhánh `development/operation-ww3`. Các bước kiểm chứng thực địa trước khi phát hành production công khai:
 
-Phụ thuộc T06. Tập trung hoàn thiện chất lượng vận hành sản xuất mà không phá vỡ bất kỳ bất biến nào của T01–T06.
-
-1. **Stress Test & Soak Test máy chủ:** Viết kịch bản tải nhiều phòng đồng thời (10–25 phòng `vietnam_campaign_v1` chạy song song + WebSocket), đo bộ nhớ/CPU/độ trễ SQLite WAL và chạy kiểm chứng ngâm đồng hồ.
-2. **Đo đạc trên thiết bị di động vật lý & tối ưu hiệu năng vẽ Canvas:** Kiểm chứng FPS, chạm tay thật và vùng an toàn (safe-area) trên điện thoại iOS/Android thật.
-3. **Tinh chỉnh cân bằng & mở rộng sâu WW3:** Bổ sung hệ thống tinh thần dân cư thành phố (morale), phòng không chuyên biệt (SAM / Mobile AA), tàu ngầm, tàu sân bay hoặc chế độ giải đấu/xếp hạng nhiều trận.
-4. **Đóng gói phát hành (Release Candidate):** Chuẩn hóa quy trình backup SQLite định kỳ, cấu hình biến môi trường production (HTTPS/WSS reverse proxy, logging có cấu trúc) và tài liệu triển khai vận hành.
+1. **Kiểm thử thực địa trên thiết bị di động vật lý (iOS Safari / Android Chrome):** Đo FPS vẽ bản đồ Canvas, cử chỉ chạm đa điểm (pinch/pan), độ dễ bấm của thanh lệnh 7 nút và vùng an toàn notch/gesture bar trên máy thật.
+2. **Chạy thử nghiệm staging theo đồng hồ tường & reverse proxy HTTPS/WSS:** Triển khai theo `docs/DEPLOYMENT.md` sau Caddy hoặc Nginx, giám sát `/api/metrics`, kiểm thử WebSocket reconnect qua mạng di động thật và xác minh cron `npm run backup:db`.
+3. **Kiểm toán bảo mật độc lập trước public launch:** Rà soát pentest/fuzzing cho auth, WebSocket và rate-limiter; mở rộng phân trang nhật báo hoặc bảng mùa giải (nếu sản phẩm yêu cầu ở bản sau RC1).

@@ -369,11 +369,33 @@ export function projectMatchForViewer(
           hospital: 0,
           airbase: 0,
           port: 0,
+          lastMoraleUtc: null,
           reserve: 0,
           jobs: [],
         };
       }
     }
+
+    const subDetectors: Array<{ lon: number; lat: number }> = [];
+    if (viewerNationId) {
+      for (const u of Object.values(cs.units)) {
+        if (!observers.has(u.ownerNationId)) continue;
+        if (u.key === 'corvette' || u.key === 'submarine' || u.key === 'recon' || u.key === 'fighter') {
+          subDetectors.push(interpolateCampaignUnitPosition(u, state.currentUtc as number));
+        }
+      }
+    }
+    const isSubmarineDetected = (pt: { lon: number; lat: number }, lastCombatUtc: number | null): boolean => {
+      if (lastCombatUtc !== null && (state.currentUtc as number) - lastCombatUtc <= 15_000) {
+        return true;
+      }
+      for (const det of subDetectors) {
+        const dx = pt.lon - det.lon;
+        const dy = pt.lat - det.lat;
+        if (dx * dx + dy * dy <= 1.0) return true;
+      }
+      return false;
+    };
 
     const filteredCampaignUnits: CampaignMatchState['units'] = {};
     for (const [unitId, unit] of Object.entries(cs.units)) {
@@ -386,7 +408,11 @@ export function projectMatchForViewer(
         continue;
       }
       const currentPos = interpolateCampaignUnitPosition(unit, state.currentUtc as number);
-      if (!observers.has(unit.ownerNationId) && !isPointObserved(currentPos)) {
+      if (unit.key === 'submarine') {
+        if (!observers.has(unit.ownerNationId) && !isSubmarineDetected(currentPos, unit.lastCombatUtc)) {
+          continue;
+        }
+      } else if (!observers.has(unit.ownerNationId) && !isPointObserved(currentPos)) {
         continue;
       }
       redactedUnitIds.push(unitId);

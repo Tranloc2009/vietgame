@@ -201,6 +201,8 @@ export function createVietnamCampaignMatchState(options: {
       hospital: 0,
       airbase: 0,
       port: 0,
+      morale: 85,
+      lastMoraleUtc: createdAtUtc,
       reserve: 0,
       jobs: [],
     };

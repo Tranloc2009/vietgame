@@ -45,6 +45,15 @@ const doctrines = {
     seconds: 60,
     requires: "motor",
   },
+  sam: {
+    branch: "HỖ TRỢ",
+    tier: "II",
+    name: "Tên lửa phòng không SAM I",
+    description: "Mở hệ thống phòng không SAM bắn hạ tiêm kích tầm 1.6° và +6 ST đánh chặn.",
+    cost: [190, 170, 40, 110, 90, 0, 390],
+    seconds: 65,
+    requires: "artillery",
+  },
   fighter: {
     branch: "KHÔNG QUÂN",
     tier: "I",
@@ -62,6 +71,15 @@ const doctrines = {
     cost: [170, 180, 90, 70, 60, 0, 360],
     seconds: 60,
     requires: null,
+  },
+  submarine: {
+    branch: "HẢI QUÂN",
+    tier: "II",
+    name: "Tàu ngầm tấn công I",
+    description: "Mở tàu ngầm tàng hình tại Quân cảng cấp 2: diệt hạm vượt trội (14 giáp), ẩn khỏi radar thường.",
+    cost: [180, 210, 100, 90, 80, 0, 440],
+    seconds: 70,
+    requires: "corvette",
   },
 };
 projects.motor = {
@@ -88,6 +106,12 @@ projects.artillery = {
   seconds: 60,
   cost: [190, 140, 30, 50, 30, 75, 330],
 };
+projects.sam = {
+  label: "Tên lửa phòng không SAM",
+  lane: "mobilize",
+  seconds: 65,
+  cost: [170, 180, 40, 90, 60, 60, 410],
+};
 projects.fighter = {
   label: "Tiêm kích đánh chặn",
   lane: "mobilize",
@@ -99,6 +123,12 @@ projects.corvette = {
   lane: "mobilize",
   seconds: 65,
   cost: [170, 190, 100, 60, 40, 70, 400],
+};
+projects.submarine = {
+  label: "Tàu ngầm tấn công",
+  lane: "mobilize",
+  seconds: 70,
+  cost: [180, 220, 110, 90, 70, 65, 480],
 };
 const nodeByName = new Map(
   towns.map((t) => [t.name, { lon: +t.lon, lat: +t.lat }]),
@@ -125,6 +155,7 @@ function upgradeCampaign(s) {
     if (c.hospital === undefined) c.hospital = 0;
     if (c.airbase === undefined) c.airbase = 0;
     if (c.port === undefined) c.port = 0;
+    if (c.morale === undefined) c.morale = 85;
   }
   if (s.units) {
     for (const u of s.units) {

@@ -218,6 +218,10 @@ export function createServerRuntime(
   const authMaxPerMin = rateLimitOverrides?.authMaxPerMin ?? 40;
   const commandMaxPerMin = rateLimitOverrides?.commandMaxPerMin ?? 180;
   const wsMaxPer10s = rateLimitOverrides?.wsMaxPer10s ?? 120;
+  const runtimeStartedAtUtc = clock.nowUtc() as number;
+  let commandsProcessed = 0;
+  let commandsRejected = 0;
+  let rateLimitHits = 0;
 
   const clientIpKey = (req: Request): string =>
     (req.ip || req.socket.remoteAddress || 'unknown').replace(/^::ffff:/, '');
@@ -230,6 +234,7 @@ export function createServerRuntime(
   ): boolean => {
     const check = limiter.check(bucketKey, maxRequests, windowMs);
     if (!check.allowed) {
+      rateLimitHits += 1;
       res.setHeader('Retry-After', String(check.retryAfterSeconds));
       res.status(429).json({
         ok: false,
@@ -347,6 +352,7 @@ export function createServerRuntime(
     socket.on('message', (raw) => {
       const wsCheck = limiter.check(wsBucketKey, wsMaxPer10s, 10_000);
       if (!wsCheck.allowed) {
+        rateLimitHits += 1;
         socket.send(
           JSON.stringify({
             type: 'room:error',
@@ -765,6 +771,7 @@ export function createServerRuntime(
 
     const result = execution.result;
     if (!result.ok) {
+      commandsRejected += 1;
       res.status(mapRejectionToHttpStatus(result.code)).json({
         ok: false,
         code: result.code,
@@ -774,6 +781,7 @@ export function createServerRuntime(
       });
       return;
     }
+    commandsProcessed += 1;
 
     const clientView = projectMatchForClient(result.nextState, result.stateHash);
 
@@ -1316,6 +1324,7 @@ export function createServerRuntime(
 
     const result = execution.result;
     if (!result.ok) {
+      commandsRejected += 1;
       res.status(mapRejectionToHttpStatus(result.code)).json({
         ok: false,
         code: result.code,
@@ -1325,6 +1334,7 @@ export function createServerRuntime(
       });
       return;
     }
+    commandsProcessed += 1;
 
     const filteredView = projectMatchForViewer(
       result.nextState,
@@ -1521,6 +1531,40 @@ export function createServerRuntime(
       ledger: viewerLedger,
       phase03,
       serverUtc: clock.nowUtc(),
+    });
+  });
+
+  // T07: Public player leaderboard aggregated from persisted SQLite rooms & match stats
+  app.get('/api/leaderboard', (req: Request, res: Response) => {
+    res.set('Cache-Control', 'no-store');
+    const limitRaw = typeof req.query.limit === 'string' ? Number.parseInt(req.query.limit, 10) : 20;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(100, limitRaw) : 20;
+    res.json({
+      ok: true,
+      leaderboard: store.getLeaderboard(limit),
+      serverUtc: clock.nowUtc(),
+    });
+  });
+
+  // T07: Structured operational telemetry & runtime metrics (zero secrets / zero PII)
+  app.get('/api/metrics', (_req: Request, res: Response) => {
+    res.set('Cache-Control', 'no-store');
+    const nowUtc = clock.nowUtc() as number;
+    const mem = process.memoryUsage();
+    res.json({
+      ok: true,
+      metrics: {
+        appVersion: APP_VERSION,
+        appEnv: config.appEnv,
+        uptimeMs: Math.max(0, nowUtc - runtimeStartedAtUtc),
+        wsConnections: wss.clients.size,
+        commandsProcessed,
+        commandsRejected,
+        rateLimitHits,
+        memoryRssMb: Math.round((mem.rss / (1024 * 1024)) * 10) / 10,
+        database: store.getOperationalStats(),
+      },
+      serverUtc: nowUtc,
     });
   });
 

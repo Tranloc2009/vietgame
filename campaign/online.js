@@ -19,6 +19,7 @@ const mp = {
   preferredSlot: "NORTH",
   inviteDraft: "",
   confirmSurrender: false,
+  leaderboard: [],
 };
 
 function isOnline() {
@@ -116,6 +117,7 @@ function buildOnlineLiveState() {
       hospital: city.hospital || 0,
       airbase: city.airbase || 0,
       port: city.port || 0,
+      morale: city.morale ?? 85,
       reserve: city.reserve,
       jobs: city.jobs.map((j) => ({
         key: j.key,
@@ -227,7 +229,12 @@ function getNextOnlineDeadlineUtc() {
     if (u.ownerNationId === viewerNationId && u.trip) consider(u.trip.endUtc);
     if (
       cs.diplomacy?.relation === "WAR" &&
-      (u.inCombat || u.key === "artillery" || u.key === "fighter" || u.key === "corvette")
+      (u.inCombat ||
+        u.key === "artillery" ||
+        u.key === "sam" ||
+        u.key === "fighter" ||
+        u.key === "corvette" ||
+        u.key === "submarine")
     ) {
       consider(u.lastCombatUtc ? u.lastCombatUtc + 10000 : cs.timeUtc + 10000);
     }
@@ -240,6 +247,11 @@ function getNextOnlineDeadlineUtc() {
       (cs.cities[u.cityId]?.hospital || 0) > 0
     ) {
       consider((u.lastHealUtc || cs.timeUtc) + 30000);
+    }
+  }
+  for (const city of Object.values(cs.cities)) {
+    if ((city.morale ?? 85) < 100) {
+      consider((city.lastMoraleUtc || cs.startUtc) + 60000);
     }
   }
   if (cs.aiControlledNationId) {
@@ -410,6 +422,17 @@ async function refreshMyRooms() {
     );
     renderMpPanel();
   }
+}
+
+async function refreshLeaderboard() {
+  if (location.protocol === "file:") return;
+  try {
+    const res = await mpApi("/api/leaderboard?limit=8");
+    if (res.ok && res.data?.ok && Array.isArray(res.data.leaderboard)) {
+      mp.leaderboard = res.data.leaderboard;
+      renderMpPanel();
+    }
+  } catch {}
 }
 
 async function sendOnlineCommand(payload, retryKey = null, attempt = 0) {
@@ -1035,6 +1058,26 @@ function renderMpPanel() {
       "</div>";
   }
 
+  if (mp.leaderboard.length) {
+    html +=
+      '<div class="mpBox"><h3>Bảng xếp hạng chỉ huy</h3><table class="lbTable"><thead><tr><th>Chỉ huy</th><th>Thắng</th><th>Thua</th><th>Chiếm TP</th></tr></thead><tbody>' +
+      mp.leaderboard
+        .map(
+          (row) =>
+            "<tr><td>" +
+            escapeText(row.displayName) +
+            "</td><td>" +
+            row.wins +
+            "</td><td>" +
+            row.losses +
+            "</td><td>" +
+            row.totalCitiesCaptured +
+            "</td></tr>",
+        )
+        .join("") +
+      "</tbody></table></div>";
+  }
+
   html +=
     '<p class="mpMuted"><a class="mpFootLink" href="/rooms.html">Mở phòng bản đồ 1955 cũ (/rooms.html)</a></p>';
 
@@ -1045,6 +1088,7 @@ $("#menuOnline").onclick = () => {
   panel("mpPanel");
   if (!$("#mpPanel").hidden) {
     renderMpPanel();
+    refreshLeaderboard();
     if (mp.token) refreshMyRooms();
   }
 };

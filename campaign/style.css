@@ -1502,6 +1502,31 @@ footer {
   font-size: 11px;
   color: #b8c1ad;
 }
+.moraleWarn {
+  color: #ff9c8a;
+  font-weight: 700;
+}
+.lbTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.lbTable th,
+.lbTable td {
+  padding: 4px 5px;
+  text-align: right;
+  border-bottom: 1px solid #485847;
+  font-variant-numeric: tabular-nums;
+}
+.lbTable th:first-child,
+.lbTable td:first-child {
+  text-align: left;
+}
+.lbTable th {
+  font-size: 10px;
+  color: #b8c4ae;
+}
+
 
 
 

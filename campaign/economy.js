@@ -197,6 +197,27 @@ const unitStats = {
     reqAirbase: 0,
     reqPort: 0,
   },
+  sam: {
+    glyph: "△",
+    domain: "LAND",
+    maxHp: 20,
+    softAttack: 2,
+    hardAttack: 4,
+    airAttack: 14,
+    defense: 6,
+    moveSeconds: 36,
+    canConquer: false,
+    ranged: true,
+    airOnlyRanged: true,
+    rangedRangeDeg: 1.6,
+    visionDeg: 1.8,
+    upkeep: [1, 1, 5],
+    reqDoctrine: "sam",
+    reqOffice: 1,
+    reqBase: 2,
+    reqAirbase: 0,
+    reqPort: 0,
+  },
   fighter: {
     glyph: "▲",
     domain: "AIR",
@@ -235,6 +256,26 @@ const unitStats = {
     reqAirbase: 0,
     reqPort: 1,
   },
+  submarine: {
+    glyph: "◊",
+    domain: "NAVAL",
+    maxHp: 30,
+    softAttack: 4,
+    hardAttack: 14,
+    defense: 8,
+    moveSeconds: 26,
+    canConquer: false,
+    ranged: true,
+    stealth: true,
+    rangedRangeDeg: 1.35,
+    visionDeg: 1.8,
+    upkeep: [1, 2, 7],
+    reqDoctrine: "submarine",
+    reqOffice: 1,
+    reqBase: 0,
+    reqAirbase: 0,
+    reqPort: 2,
+  },
 };
 const hour = 3600000;
 function startCampaign(names, now) {
@@ -251,6 +292,7 @@ function startCampaign(names, now) {
         hospital: 0,
         airbase: 0,
         port: 0,
+        morale: 85,
         reserve: 0,
         jobs: [],
       },
@@ -265,8 +307,10 @@ function startCampaign(names, now) {
   };
 }
 function cityOutput(c) {
-  const output = [0, 0, 0, 0, 0, 2 + c.office * 2, 8];
-  output[c.material] = 10 + 5 * c.factory;
+  const morale = c.morale ?? 85;
+  const factorPct = morale >= 60 ? 100 : morale >= 35 ? 80 : 60;
+  const output = [0, 0, 0, 0, 0, 2 + c.office * 2, Math.floor((8 * factorPct) / 100)];
+  output[c.material] = Math.floor(((10 + 5 * c.factory) * factorPct) / 100);
   return output;
 }
 function ledger(s) {
