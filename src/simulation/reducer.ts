@@ -49,6 +49,7 @@ import {
 import {
   applyCampaignCancelCityProject,
   applyCampaignCancelResearch,
+  applyCampaignDemolishBuilding,
   applyCampaignGroupUnits,
   applyCampaignMoveUnit,
   applyCampaignSetDiplomacy,
@@ -1936,6 +1937,37 @@ export function reduceCommand(
         unitIds: payload.unitIds,
         stackId: payload.stackId,
         toCityId: payload.toCityId,
+        nowUtc,
+      });
+      if (!outcome.ok) {
+        return reject(state, outcome.code, outcome.reason);
+      }
+      campaignState = outcome.campaignState;
+      units = outcome.units;
+      regions = outcome.regions;
+      for (const ev of outcome.drafts) drafts.push(ev);
+      break;
+    }
+
+    case 'CAMPAIGN_DEMOLISH_BUILDING': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(
+          state,
+          'FORBIDDEN_ACTION',
+          `Actor "${actor.actorId}" cannot demolish buildings for "${payload.nationId}".`
+        );
+      }
+      if (!campaignState) {
+        return reject(state, 'INVALID_TARGET', 'Phòng đấu này không thuộc kịch bản chiến dịch Việt Nam.');
+      }
+      const outcome = applyCampaignDemolishBuilding({
+        state: campaignState,
+        unitsRecord: units,
+        regionsRecord: regions,
+        nationsMeta: nations,
+        nationId: payload.nationId,
+        cityId: payload.cityId,
+        buildingKey: payload.buildingKey,
         nowUtc,
       });
       if (!outcome.ok) {

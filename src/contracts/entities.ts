@@ -21,6 +21,7 @@ import {
   UtcEpochMsSchema,
 } from './primitives';
 import {
+  CampaignBuildingKeySchema,
   CampaignDiplomacyActionSchema,
   CampaignDoctrineKeySchema,
   CampaignLaneSchema,
@@ -448,6 +449,14 @@ export const CommandPayloadSchema = z.discriminatedUnion('type', [
       toCityId: RegionIdSchema.nullable().optional(),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_DEMOLISH_BUILDING'),
+      nationId: NationIdSchema,
+      cityId: RegionIdSchema,
+      buildingKey: CampaignBuildingKeySchema,
+    })
+    .strict(),
 ]);
 export type CommandPayload = z.infer<typeof CommandPayloadSchema>;
 
@@ -809,6 +818,16 @@ export const DomainEventPayloadSchema = z.discriminatedUnion('type', [
       previousOwnerNationId: NationIdSchema,
       newOwnerNationId: NationIdSchema,
       newOwnerVp: z.number().int().min(0),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_BUILDING_DEMOLISHED'),
+      nationId: NationIdSchema,
+      cityId: RegionIdSchema,
+      buildingKey: CampaignBuildingKeySchema,
+      previousLevel: z.number().int().min(1),
+      newLevel: z.number().int().min(0),
     })
     .strict(),
   z

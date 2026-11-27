@@ -156,9 +156,43 @@ $("#center").onclick = () =>
   selected ? selectItem(selected, true) : $("#reset").click();
 $("#clear").onclick = () => selectItem(null);
 document.addEventListener("keydown", (e) => {
+  const tag = (e.target && /** @type {HTMLElement} */ (e.target).tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+    if (e.key === "Escape") panel(null);
+    return;
+  }
   if (e.key === "Escape") {
     if (panels.some((id) => !$("#" + id).hidden)) panel(null);
     else if (choosingDestination) cancelDestination();
     else selectItem(null);
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const quickPanels = {
+    "1": "#menuCity",
+    "2": "#menuStudy",
+    "3": "#menuUnits",
+    "4": "#menuDiplomacy",
+    "5": "#menuStock",
+    "6": "#menuEvents",
+    "7": "#menuOnline",
+  };
+  if (Object.hasOwn(quickPanels, e.key)) {
+    const btn = $(quickPanels[e.key]);
+    if (btn) {
+      e.preventDefault();
+      btn.click();
+    }
+    return;
+  }
+  if (e.key === " " || e.code === "Space") {
+    e.preventDefault();
+    if (typeof activeUnit !== "undefined" && activeUnit !== null && $("#findUnit")) {
+      $("#findUnit").click();
+    } else if (selected) {
+      selectItem(selected, true);
+    } else {
+      $("#reset").click();
+    }
   }
 });

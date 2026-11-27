@@ -236,11 +236,29 @@ function draw() {
         continue;
       boxes.push(b);
       visible.push({ c, b });
-      const ownedCity =
-        typeof live !== "undefined" && live?.cities?.[c.name]?.owned === false
-          ? false
-          : true;
+      const cityLive = typeof live !== "undefined" ? live?.cities?.[c.name] : null;
+      const ownedCity = cityLive?.owned === false ? false : true;
       emblem(x, y, c.capital, c === selected || c === hover, ownedCity);
+      if (ownedCity && cityLive && (cityLive.morale ?? 85) < 50) {
+        ctx.save();
+        ctx.strokeStyle = cityLive.morale <= 25 ? "#ff5c4d" : "#ffb74d";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([3, 2]);
+        ctx.beginPath();
+        ctx.arc(x, y, c.capital ? 12 : 9, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = cityLive.morale <= 25 ? "#b52820" : "#8c5710";
+        ctx.beginPath();
+        ctx.arc(x - (c.capital ? 9 : 7), y - (c.capital ? 9 : 7), 5.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#fff8dc";
+        ctx.font = 'bold 9px "Segoe UI",sans-serif';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("!", x - (c.capital ? 9 : 7), y - (c.capital ? 8.5 : 6.5));
+        ctx.restore();
+      }
       if (layers.labels)
         label(
           c.name,

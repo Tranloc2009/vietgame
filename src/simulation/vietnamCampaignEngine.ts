@@ -4,6 +4,7 @@ import {
   CAMPAIGN_AI_DECISION_INTERVAL_MS,
   CAMPAIGN_AIR_RANGE_DEG,
   CAMPAIGN_COMBAT_TICK_MS,
+  CAMPAIGN_DEMOLISH_REFUND_PCT,
   CAMPAIGN_HEAL_TICK_MS,
   CAMPAIGN_HOUR_MS,
   CAMPAIGN_MELEE_RANGE_DEG,
@@ -13,7 +14,9 @@ import {
   CAMPAIGN_RANGED_RANGE_DEG,
   CAMPAIGN_SAM_RANGE_DEG,
   CAMPAIGN_SUB_RANGE_DEG,
+  CampaignAiDifficulty,
   CampaignBattleReport,
+  CampaignBuildingKey,
   CampaignCityJob,
   CampaignCityState,
   CampaignDiplomacyAction,
@@ -587,6 +590,7 @@ type MutableCampaignState = {
   diplomacy: CampaignDiplomacyState;
   victory: CampaignMatchState['victory'];
   aiControlledNationId: NationId | null;
+  aiDifficulty: CampaignAiDifficulty;
   aiLastDecisionUtc: UtcEpochMs | null;
   nations: Record<string, CampaignNationState>;
   cities: Record<string, CampaignCityState>;
@@ -670,6 +674,7 @@ function cloneCampaignState(state: CampaignMatchState): MutableCampaignState {
       ? { ...state.victory, scoresByNation: { ...state.victory.scoresByNation } }
       : null,
     aiControlledNationId: state.aiControlledNationId ?? null,
+    aiDifficulty: state.aiDifficulty ?? 'NORMAL',
     aiLastDecisionUtc: state.aiLastDecisionUtc ?? null,
     nations,
     cities,
@@ -1066,7 +1071,8 @@ function findNextDueCombatOrHealUtc(
 
   if (cs.aiControlledNationId && !cs.victory) {
     const aiBase = (cs.aiLastDecisionUtc ?? cs.startUtc) as number;
-    consider(aiBase + CAMPAIGN_AI_DECISION_INTERVAL_MS);
+    const profile = getCampaignAiDifficultyProfile(cs.aiDifficulty ?? 'NORMAL');
+    consider(aiBase + profile.decisionIntervalMs);
   }
 
   return earliest;
@@ -1114,6 +1120,96 @@ function cleanupSingletonStack(cs: MutableCampaignState, stackId: string | null)
   }
 }
 
+export interface CampaignAiDifficultyProfile {
+  readonly difficulty: CampaignAiDifficulty;
+  readonly decisionIntervalMs: number;
+  readonly maxUnits: number;
+  readonly frontierLimit: number;
+  readonly maxBuildingLevel: number;
+  readonly warUnitThreshold: number;
+  readonly techOrder: readonly CampaignDoctrineKey[];
+  readonly unitCandidates: readonly CampaignUnitKey[];
+}
+
+export function getCampaignAiDifficultyProfile(
+  difficulty: CampaignAiDifficulty = 'NORMAL'
+): CampaignAiDifficultyProfile {
+  switch (difficulty) {
+    case 'EASY':
+      return {
+        difficulty: 'EASY',
+        decisionIntervalMs: 35_000,
+        maxUnits: 5,
+        frontierLimit: 2,
+        maxBuildingLevel: 1,
+        warUnitThreshold: 3,
+        techOrder: ['motor', 'recon', 'artillery', 'motor2'],
+        unitCandidates: ['motor', 'recon', 'artillery', 'reserve'],
+      };
+    case 'HARD':
+      return {
+        difficulty: 'HARD',
+        decisionIntervalMs: 12_000,
+        maxUnits: 14,
+        frontierLimit: 6,
+        maxBuildingLevel: 2,
+        warUnitThreshold: 1,
+        techOrder: [
+          'motor',
+          'artillery',
+          'fighter',
+          'corvette',
+          'sam',
+          'tank',
+          'submarine',
+          'motor2',
+          'recon',
+        ],
+        unitCandidates: [
+          'tank',
+          'fighter',
+          'sam',
+          'submarine',
+          'artillery',
+          'corvette',
+          'motor',
+          'recon',
+          'reserve',
+        ],
+      };
+    case 'NORMAL':
+    default:
+      return {
+        difficulty: 'NORMAL',
+        decisionIntervalMs: CAMPAIGN_AI_DECISION_INTERVAL_MS,
+        maxUnits: 8,
+        frontierLimit: 4,
+        maxBuildingLevel: 1,
+        warUnitThreshold: 2,
+        techOrder: [
+          'motor',
+          'recon',
+          'artillery',
+          'fighter',
+          'corvette',
+          'sam',
+          'submarine',
+          'motor2',
+          'tank',
+        ],
+        unitCandidates: [
+          'motor',
+          'artillery',
+          'fighter',
+          'corvette',
+          'recon',
+          'tank',
+          'reserve',
+        ],
+      };
+  }
+}
+
 function runCampaignAiStep(
   cs: MutableCampaignState,
   unitsRecord: Record<string, Unit>,
@@ -1122,9 +1218,10 @@ function runCampaignAiStep(
 ): void {
   if (!cs.aiControlledNationId || cs.victory) return;
   const aiNationId = cs.aiControlledNationId;
+  const profile = getCampaignAiDifficultyProfile(cs.aiDifficulty ?? 'NORMAL');
   const nowNum = stepUtc as number;
   const lastAiNum = (cs.aiLastDecisionUtc ?? cs.startUtc) as number;
-  if (lastAiNum + CAMPAIGN_AI_DECISION_INTERVAL_MS > nowNum) return;
+  if (lastAiNum + profile.decisionIntervalMs > nowNum) return;
 
   cs.aiLastDecisionUtc = stepUtc;
   const nation = cs.nations[aiNationId];
@@ -1144,18 +1241,7 @@ function runCampaignAiStep(
 
   // 1. Deterministic Research Progression
   if (!nation.study) {
-    const techOrder: CampaignDoctrineKey[] = [
-      'motor',
-      'recon',
-      'artillery',
-      'fighter',
-      'corvette',
-      'sam',
-      'submarine',
-      'motor2',
-      'tank',
-    ];
-    for (const key of techOrder) {
+    for (const key of profile.techOrder) {
       if (nation.learned.includes(key)) continue;
       const spec = CAMPAIGN_DOCTRINE_CATALOG[key];
       if (spec.requires && !nation.learned.includes(spec.requires)) continue;
@@ -1200,7 +1286,7 @@ function runCampaignAiStep(
   );
 
   // 2. Deterministic Frontier Infrastructure Build (max 1 queued per AI cycle)
-  const buildTargets = frontierCities.slice(0, 4);
+  const buildTargets = frontierCities.slice(0, profile.frontierLimit);
   let builtThisStep = false;
   for (const city of buildTargets) {
     if (builtThisStep) break;
@@ -1211,7 +1297,9 @@ function runCampaignAiStep(
 
     for (const key of plan) {
       const curLv = getBuildingLevel(city, key);
-      if (curLv >= 1) continue;
+      const specMax = CAMPAIGN_PROJECT_CATALOG[key].maxLevel ?? 5;
+      const targetCap = Math.min(specMax, key === 'office' ? 1 : profile.maxBuildingLevel);
+      if (curLv >= targetCap) continue;
       const terms = computeCampaignProjectTerms(city, key);
       if (!canAfford(terms.cost)) continue;
       deduct(terms.cost);
@@ -1236,24 +1324,15 @@ function runCampaignAiStep(
     }
   }
 
-  // 3. Deterministic Mobilization in Frontier Cities (up to 8 active AI units)
+  // 3. Deterministic Mobilization in Frontier Cities (bounded by difficulty maxUnits)
   const aiUnits = Object.values(cs.units).filter((u) => u.ownerNationId === aiNationId);
   const aiMobilizingCount = ownCities.filter((c) => c.jobs.some((j) => j.lane === 'mobilize')).length;
-  if (aiUnits.length + aiMobilizingCount < 8) {
-    const unitCandidates: CampaignUnitKey[] = [
-      'motor',
-      'artillery',
-      'fighter',
-      'corvette',
-      'recon',
-      'tank',
-      'reserve',
-    ];
+  if (aiUnits.length + aiMobilizingCount < profile.maxUnits) {
     let mobilizedThisStep = false;
     for (const city of buildTargets) {
       if (mobilizedThisStep) break;
       if (city.office < 1 || city.jobs.some((j) => j.lane === 'mobilize')) continue;
-      for (const uKey of unitCandidates) {
+      for (const uKey of profile.unitCandidates) {
         const spec = CAMPAIGN_UNIT_STATS[uKey];
         if (spec.requiredDoctrine && !nation.learned.includes(spec.requiredDoctrine)) continue;
         if (city.office < spec.requiredOffice) continue;
@@ -1285,9 +1364,9 @@ function runCampaignAiStep(
     }
   }
 
-  // 4. Diplomacy: Declare WAR once AI has >= 2 active units ready
+  // 4. Diplomacy: Declare WAR once AI meets its difficulty unit threshold
   const otherNationId = Object.keys(cs.nations).find((id) => id !== aiNationId) as NationId | undefined;
-  if (cs.diplomacy.relation === 'PEACE' && aiUnits.length >= 2 && otherNationId) {
+  if (cs.diplomacy.relation === 'PEACE' && aiUnits.length >= profile.warUnitThreshold && otherNationId) {
     cs.diplomacy.relation = 'WAR';
     cs.diplomacy.peaceProposedByNationId = null;
     cs.diplomacy.intelProposedByNationId = null;
@@ -3296,6 +3375,111 @@ export function applyCampaignGroupUnits(options: {
       action: 'MOVE_STACK',
       stackId,
       unitIds: memberIds,
+    },
+  });
+  return { ok: true, campaignState: cs, units: nextUnits, regions: nextRegions, drafts };
+}
+
+export function applyCampaignDemolishBuilding(options: {
+  readonly state: CampaignMatchState;
+  readonly unitsRecord: Readonly<Record<string, Unit>>;
+  readonly regionsRecord: Readonly<Record<string, Region>>;
+  readonly nationsMeta: Readonly<Record<string, Nation>>;
+  readonly nationId: NationId;
+  readonly cityId: RegionId;
+  readonly buildingKey: CampaignBuildingKey;
+  readonly nowUtc: UtcEpochMs;
+}): CampaignMutationResult {
+  const cs = cloneCampaignState(options.state);
+  const nextUnits = { ...options.unitsRecord };
+  const nextRegions = { ...options.regionsRecord };
+  const drafts: CampaignPendingEventDraft[] = [];
+  settleCampaignInPlace(cs, nextUnits, nextRegions, options.nationsMeta, options.nowUtc, drafts);
+
+  if (cs.victory) {
+    return { ok: false, code: 'FORBIDDEN_ACTION', reason: 'Trận chiến dịch đã kết thúc.' };
+  }
+  const nation = cs.nations[options.nationId];
+  const city = cs.cities[options.cityId];
+  if (!nation || !city) {
+    return { ok: false, code: 'INVALID_TARGET', reason: 'Thành phố hoặc quốc gia không tồn tại.' };
+  }
+  if (city.ownerNationId !== options.nationId) {
+    return {
+      ok: false,
+      code: 'FORBIDDEN_ACTION',
+      reason: `Bạn không kiểm soát thành phố ${city.name} nên không thể phá dỡ công trình.`,
+    };
+  }
+  const currentLevel = getBuildingLevel(city, options.buildingKey);
+  if (currentLevel < 1) {
+    return {
+      ok: false,
+      code: 'INVALID_TARGET',
+      reason: 'Thành phố chưa có công trình này để phá dỡ.',
+    };
+  }
+  if (city.jobs.some((j) => j.lane === 'build' && j.key === options.buildingKey)) {
+    return {
+      ok: false,
+      code: 'INVALID_TARGET',
+      reason: 'Hãy hủy lệnh nâng cấp đang chạy trước khi phá dỡ công trình này.',
+    };
+  }
+
+  const nextLevel = currentLevel - 1;
+  switch (options.buildingKey) {
+    case 'factory':
+      city.factory = nextLevel;
+      break;
+    case 'office':
+      city.office = nextLevel;
+      break;
+    case 'base':
+      city.base = nextLevel;
+      break;
+    case 'bunker':
+      city.bunker = nextLevel;
+      break;
+    case 'hospital':
+      city.hospital = nextLevel;
+      break;
+    case 'airbase':
+      city.airbase = nextLevel;
+      break;
+    case 'port':
+      city.port = nextLevel;
+      break;
+  }
+
+  const spec = CAMPAIGN_PROJECT_CATALOG[options.buildingKey];
+  for (let i = 0; i < 7; i += 1) {
+    const levelCost = spec.cost[i] * currentLevel;
+    const salvage = Math.floor((levelCost * CAMPAIGN_DEMOLISH_REFUND_PCT) / 100);
+    if (salvage > 0) {
+      nation.balance[i] += salvage * CAMPAIGN_HOUR_MS;
+    }
+  }
+
+  appendCampaignLog(
+    cs.log,
+    options.nowUtc,
+    options.nationId,
+    city.cityId,
+    city.name,
+    `Đã phá dỡ ${spec.label} (cấp ${currentLevel} → ${nextLevel}), thu hồi ${CAMPAIGN_DEMOLISH_REFUND_PCT}% tài nguyên.`
+  );
+  drafts.push({
+    occurredAtUtc: options.nowUtc,
+    tieBreakPriority: 38,
+    tieBreakKey: `${city.cityId}:demolish:${options.buildingKey}:${currentLevel}`,
+    payload: {
+      type: 'CAMPAIGN_BUILDING_DEMOLISHED',
+      nationId: options.nationId,
+      cityId: city.cityId,
+      buildingKey: options.buildingKey,
+      previousLevel: currentLevel,
+      newLevel: nextLevel,
     },
   });
   return { ok: true, campaignState: cs, units: nextUnits, regions: nextRegions, drafts };

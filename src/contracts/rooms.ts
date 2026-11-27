@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   ActorIdSchema,
   CAMPAIGN_OBSERVATION_RADIUS_DEG,
+  CampaignAiDifficultySchema,
   CampaignMatchState,
   ClientMatchViewSchema,
   DomainEvent,
@@ -72,6 +73,7 @@ export const CreateRoomPayloadSchema = z
     preferredSlot: HumanSlotSchema.default('NORTH'),
     scenarioId: ScenarioIdSchema.default('vietnam_1955'),
     aiOpponent: z.boolean().default(false),
+    aiDifficulty: CampaignAiDifficultySchema.default('NORMAL'),
   })
   .strict();
 
@@ -289,6 +291,7 @@ export function projectRoomEventsForViewer(
       case 'CAMPAIGN_UNIT_ORDER_ISSUED':
       case 'CAMPAIGN_UNIT_ARRIVED':
       case 'CAMPAIGN_UNITS_GROUPED':
+      case 'CAMPAIGN_BUILDING_DEMOLISHED':
         return payload.nationId === viewerNationId ? [event] : [];
       case 'PHASE03_CYCLE_SETTLED':
         // The national report already carries the viewer's own capacity and alerts.

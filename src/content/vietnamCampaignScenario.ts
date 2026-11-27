@@ -5,6 +5,7 @@ import {
   asUtcEpochMs,
   CAMPAIGN_HOUR_MS,
   CAMPAIGN_VICTORY_TARGET_VP,
+  CampaignAiDifficulty,
   CampaignCityState,
   CampaignMatchState,
   CampaignResourceTuple,
@@ -137,6 +138,7 @@ export function createVietnamCampaignMatchState(options: {
   createdAtUtc: number;
   mode: MatchMode;
   aiControlledNationId?: NationId | null;
+  aiDifficulty?: CampaignAiDifficulty;
 }): MatchState {
   const matchId = MatchIdSchema.parse(options.matchId);
   const createdAtUtc = asUtcEpochMs(options.createdAtUtc);
@@ -232,6 +234,7 @@ export function createVietnamCampaignMatchState(options: {
     },
     victory: null,
     aiControlledNationId: options.aiControlledNationId ?? null,
+    aiDifficulty: options.aiDifficulty ?? 'NORMAL',
     aiLastDecisionUtc: null,
     nations: {
       [WORLD_NATIONS.north]: {

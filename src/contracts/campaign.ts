@@ -28,7 +28,22 @@ export const CAMPAIGN_COMBAT_TICK_MS = 10_000;
 export const CAMPAIGN_HEAL_TICK_MS = 30_000;
 export const CAMPAIGN_MORALE_TICK_MS = 60_000;
 export const CAMPAIGN_AI_DECISION_INTERVAL_MS = 20_000;
+export const CAMPAIGN_DEMOLISH_REFUND_PCT = 40;
 export const CAMPAIGN_VICTORY_TARGET_VP = 400;
+
+export const CampaignAiDifficultySchema = z.enum(['EASY', 'NORMAL', 'HARD']);
+export type CampaignAiDifficulty = z.infer<typeof CampaignAiDifficultySchema>;
+
+export const CampaignBuildingKeySchema = z.enum([
+  'factory',
+  'office',
+  'base',
+  'bunker',
+  'hospital',
+  'airbase',
+  'port',
+]);
+export type CampaignBuildingKey = z.infer<typeof CampaignBuildingKeySchema>;
 
 const CampaignSafeIntSchema = z
   .number()
@@ -298,6 +313,7 @@ export const CampaignMatchStateSchema = z
     diplomacy: CampaignDiplomacyStateSchema.optional(),
     victory: CampaignVictoryStateSchema.nullable().default(null),
     aiControlledNationId: NationIdSchema.nullable().default(null),
+    aiDifficulty: CampaignAiDifficultySchema.default('NORMAL'),
     aiLastDecisionUtc: UtcEpochMsSchema.nullable().default(null),
     nations: z.record(z.string(), CampaignNationStateSchema),
     cities: z.record(z.string(), CampaignCityStateSchema),

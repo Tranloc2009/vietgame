@@ -5,6 +5,7 @@ import path from 'node:path';
 import {
   ActorIdSchema,
   asUtcEpochMs,
+  CampaignAiDifficulty,
   canonicalStringify,
   Command,
   CommandSchema,
@@ -643,6 +644,7 @@ export class SqliteMatchStore {
     mode: 'PRODUCTION_REALTIME' | 'PREVIEW_FIXTURE';
     scenarioId?: ScenarioId;
     aiOpponent?: boolean;
+    aiDifficulty?: CampaignAiDifficulty;
   }): { room: MatchRoomSummary; state: MatchState; stateHash: string } {
     const matchId = MatchIdSchema.parse(`mch_${crypto.randomBytes(6).toString('hex')}`);
     const inviteCode = generateInviteCode();
@@ -663,6 +665,7 @@ export class SqliteMatchStore {
             createdAtUtc: options.nowUtc,
             mode: options.mode,
             aiControlledNationId: aiNationId,
+            aiDifficulty: options.aiDifficulty ?? 'NORMAL',
           })
         : createWorld72MatchState({
             matchId,

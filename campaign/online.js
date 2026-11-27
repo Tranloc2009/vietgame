@@ -17,6 +17,7 @@ const mp = {
   error: "",
   roomTitleDraft: "Chiến dịch Việt Nam",
   preferredSlot: "NORTH",
+  aiDifficulty: "NORMAL",
   inviteDraft: "",
   confirmSurrender: false,
   leaderboard: [],
@@ -193,6 +194,7 @@ function buildOnlineLiveState() {
     victoryPointsByNation: cs.victoryPointsByNation || {},
     victory: effectiveVictory,
     aiControlledNationId: cs.aiControlledNationId || null,
+    aiDifficulty: cs.aiDifficulty || "NORMAL",
     news: cs.news || [],
     battleReports: cs.battleReports || [],
     study: nation?.study
@@ -255,7 +257,9 @@ function getNextOnlineDeadlineUtc() {
     }
   }
   if (cs.aiControlledNationId) {
-    consider((cs.aiLastDecisionUtc || cs.startUtc) + 20000);
+    const aiStepMs =
+      cs.aiDifficulty === "HARD" ? 12000 : cs.aiDifficulty === "EASY" ? 35000 : 20000;
+    consider((cs.aiLastDecisionUtc || cs.startUtc) + aiStepMs);
   }
   return earliest;
 }
@@ -536,6 +540,21 @@ async function sendOnlineCityProject(cityName, projectKey, cancel, expectedStart
   });
 }
 
+async function sendOnlineDemolish(cityName, buildingKey) {
+  const nationId = mp.match.viewerNationId;
+  const city = live?.cities?.[cityName];
+  if (!city?.cityId) {
+    notice("Không xác định được thành phố cần phá dỡ công trình.");
+    return false;
+  }
+  return sendOnlineCommand({
+    type: "CAMPAIGN_DEMOLISH_BUILDING",
+    nationId,
+    cityId: city.cityId,
+    buildingKey,
+  });
+}
+
 async function sendOnlineMove(unit, toCityName) {
   const nationId = mp.match.viewerNationId;
   let toCityId = null;
@@ -720,57 +739,72 @@ function renderDiplomacyHtml() {
   );
 }
 
-function renderCampaignNewsAndBattlesHtml() {
-  const news = live?.news || [];
-  const reports = live?.battleReports || [];
+function renderCampaignNewsAndBattlesHtml(dayFilter = 0, catFilter = "all") {
+  const dayOf = (ts) =>
+    1 + Math.max(0, Math.floor((ts - (live?.start || ts)) / 86400000));
+  const rawNews = live?.news || [];
+  const rawReports = live?.battleReports || [];
+  const news =
+    dayFilter > 0 ? rawNews.filter((n) => dayOf(n.timeUtc) === dayFilter) : rawNews;
+  const reports =
+    dayFilter > 0
+      ? rawReports.filter((r) => dayOf(r.occurredAtUtc) === dayFilter)
+      : rawReports;
   let html = "";
-  if (news.length) {
-    html +=
-      '<h4 class="subHead">Nhật báo chiến sự</h4><ol class="eventList">' +
-      news
-        .slice(0, 25)
-        .map(
-          (n) =>
-            '<li><time>' +
-            new Date(n.timeUtc).toLocaleTimeString("vi-VN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }) +
-            "</time><span><b>" +
-            escapeText(n.headline) +
-            "</b> — " +
-            escapeText(n.detail) +
-            "</span></li>",
-        )
-        .join("") +
-      "</ol>";
+  if (catFilter === "all" || catFilter === "news") {
+    html += '<h4 class="subHead">Nhật báo chiến sự (' + news.length + ')</h4><ol class="eventList">';
+    html += news.length
+      ? news
+          .slice(0, 30)
+          .map(
+            (n) =>
+              "<li><time>N" +
+              dayOf(n.timeUtc) +
+              " " +
+              new Date(n.timeUtc).toLocaleTimeString("vi-VN", {
+                hour: "2-digit",
+                minute: "2-digit",
+              }) +
+              "</time><span><b>" +
+              escapeText(n.headline) +
+              "</b> — " +
+              escapeText(n.detail) +
+              "</span></li>",
+          )
+          .join("")
+      : "<li><time>—</time><span>Chưa có nhật báo trong ngày này.</span></li>";
+    html += "</ol>";
   }
-  if (reports.length) {
+  if (catFilter === "all" || catFilter === "battles") {
     html +=
       '<h4 class="subHead">Báo cáo chiến đấu (' +
       reports.length +
-      ')</h4><ol class="eventList">' +
-      reports
-        .slice(0, 20)
-        .map(
-          (r) =>
-            "<li><time>" +
-            new Date(r.occurredAtUtc).toLocaleTimeString("vi-VN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }) +
-            "</time><span><b>" +
-            (r.kind === "AIRSTRIKE"
-              ? "▲ Không kích"
-              : r.kind === "BOMBARDMENT"
-                ? "◎ Pháo kích"
-                : "⚔ Cận chiến") +
-            "</b> · " +
-            escapeText(r.summary) +
-            "</span></li>",
-        )
-        .join("") +
-      "</ol>";
+      ')</h4><ol class="eventList">';
+    html += reports.length
+      ? reports
+          .slice(0, 25)
+          .map(
+            (r) =>
+              "<li><time>N" +
+              dayOf(r.occurredAtUtc) +
+              " " +
+              new Date(r.occurredAtUtc).toLocaleTimeString("vi-VN", {
+                hour: "2-digit",
+                minute: "2-digit",
+              }) +
+              "</time><span><b>" +
+              (r.kind === "AIRSTRIKE"
+                ? "▲ Không kích"
+                : r.kind === "BOMBARDMENT"
+                  ? "◎ Pháo kích"
+                  : "⚔ Cận chiến") +
+              "</b> · " +
+              escapeText(r.summary) +
+              "</span></li>",
+          )
+          .join("")
+      : "<li><time>—</time><span>Chưa có báo cáo chiến đấu trong ngày này.</span></li>";
+    html += "</ol>";
   }
   return html;
 }
@@ -1025,6 +1059,17 @@ function renderMpPanel() {
       (mp.preferredSlot === "SOUTH" ? "selected" : "") +
       ">Phương Nam (TP. Hồ Chí Minh · Cần Thơ · 30 thành phố)</option>" +
       "</select></div>" +
+      '<div class="mpField"><label for="mpAiDifficulty">Độ khó Bộ Tư Lệnh Máy (AI)</label><select id="mpAiDifficulty" name="aiDifficulty">' +
+      '<option value="EASY" ' +
+      (mp.aiDifficulty === "EASY" ? "selected" : "") +
+      ">Dễ (Nhịp chậm · Phòng thủ bộ binh)</option>" +
+      '<option value="NORMAL" ' +
+      (mp.aiDifficulty === "NORMAL" ? "selected" : "") +
+      ">Chuẩn (Cân bằng Lục · Không · Hải quân)</option>" +
+      '<option value="HARD" ' +
+      (mp.aiDifficulty === "HARD" ? "selected" : "") +
+      ">Khó (Nhịp nhanh · Hợp thành cấp II · Tăng/SAM/Tàu ngầm)</option>" +
+      "</select></div>" +
       '<div class="mpRow">' +
       '<button type="submit" id="mpCreateRoom" class="mpBtnPrimary">Tạo phòng 2 người</button>' +
       '<button type="button" id="mpCreateAiRoom" class="aiBtn">Đấu với Máy (AI)</button>' +
@@ -1205,8 +1250,10 @@ $("#mpBody").addEventListener("click", async (e) => {
     const fd = form instanceof HTMLFormElement ? new FormData(form) : null;
     const title = String(fd?.get("title") || mp.roomTitleDraft || "Chiến dịch vs AI").trim();
     const preferredSlot = String(fd?.get("preferredSlot") || mp.preferredSlot || "NORTH");
+    const aiDifficulty = String(fd?.get("aiDifficulty") || mp.aiDifficulty || "NORMAL");
     mp.roomTitleDraft = title;
     mp.preferredSlot = preferredSlot;
+    mp.aiDifficulty = aiDifficulty;
     mp.error = "";
     try {
       const res = await mpApi("/api/rooms", {
@@ -1216,6 +1263,7 @@ $("#mpBody").addEventListener("click", async (e) => {
           preferredSlot,
           scenarioId: "vietnam_campaign_v1",
           aiOpponent: true,
+          aiDifficulty,
         },
       });
       if (!res.ok || !res.data?.ok) {

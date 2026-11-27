@@ -407,3 +407,25 @@ function order(s, city, key, cancel = false) {
   c.jobs.push({ key, cost, start: s.time, end: s.time + duration * 1000 });
   addLog(s, s.time, city, "Bắt đầu " + p.label + ".");
 }
+function demolishBuilding(s, city, key) {
+  if (!Object.hasOwn(s.cities, city) || !Object.hasOwn(projects, key))
+    throw Error("Lệnh phá dỡ không hợp lệ.");
+  const c = s.cities[city],
+    p = projects[key];
+  if (p.lane !== "build") throw Error("Chỉ có thể phá dỡ công trình.");
+  const curLv = c[key] || 0;
+  if (curLv < 1) throw Error("Thành phố chưa có công trình này.");
+  if (c.jobs.some((j) => projects[j.key]?.lane === "build" && j.key === key))
+    throw Error("Hãy hủy lệnh nâng cấp đang chạy trước khi phá dỡ.");
+  c[key] = curLv - 1;
+  p.cost.forEach((v, i) => {
+    const salvage = Math.floor((v * curLv * 40) / 100);
+    if (salvage > 0) s.balance[i] += salvage * hour;
+  });
+  addLog(
+    s,
+    s.time,
+    city,
+    "Phá dỡ " + p.label + " (cấp " + curLv + " → " + (curLv - 1) + "), hoàn 40% tài nguyên.",
+  );
+}

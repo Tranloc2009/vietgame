@@ -194,6 +194,7 @@ function checkCommandNationOwnership(
     case 'CAMPAIGN_MOVE_UNIT':
     case 'CAMPAIGN_SET_DIPLOMACY':
     case 'CAMPAIGN_GROUP_UNITS':
+    case 'CAMPAIGN_DEMOLISH_BUILDING':
       if (command.payload.nationId !== memberNationId) {
         return {
           ok: false,
@@ -212,7 +213,35 @@ export function createServerRuntime(
   rateLimitOverrides?: ServerRateLimitConfig
 ): ServerRuntime {
   const app = express();
-  app.use(express.json({ limit: '256kb' }));
+  app.disable('x-powered-by');
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('X-DNS-Prefetch-Control', 'off');
+    next();
+  });
+  app.use(express.json({ limit: '128kb' }));
+  app.use((err: unknown, _req: Request, res: Response, next: (e?: unknown) => void) => {
+    if (err instanceof SyntaxError && 'body' in err) {
+      res.status(400).json({
+        ok: false,
+        code: 'INVALID_JSON',
+        reason: 'Nội dung JSON gửi lên không hợp lệ.',
+      });
+      return;
+    }
+    if (err && typeof err === 'object' && 'type' in err && (err as { type?: string }).type === 'entity.too.large') {
+      res.status(413).json({
+        ok: false,
+        code: 'PAYLOAD_TOO_LARGE',
+        reason: 'Kích thước gói tin vượt quá giới hạn cho phép (128 KB).',
+      });
+      return;
+    }
+    next(err);
+  });
 
   const limiter = new SlidingWindowRateLimiter(clock);
   const authMaxPerMin = rateLimitOverrides?.authMaxPerMin ?? 40;
@@ -957,6 +986,7 @@ export function createServerRuntime(
       preferredSlot: parsed.data.preferredSlot,
       scenarioId: parsed.data.scenarioId,
       aiOpponent: parsed.data.aiOpponent,
+      aiDifficulty: parsed.data.aiDifficulty,
       nowUtc: clock.nowUtc(),
       mode: config.isProduction ? 'PRODUCTION_REALTIME' : 'PREVIEW_FIXTURE',
     });

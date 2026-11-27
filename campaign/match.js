@@ -25,6 +25,9 @@ const escapeText = (v) =>
 let cityTab = "summary",
   nationalView = "stock",
   pickedMaterial = -1,
+  confirmDemolishKey = null,
+  newsDayFilter = 0,
+  newsCatFilter = "all",
   db = null,
   saved = null,
   live = null,
@@ -88,6 +91,21 @@ if (channel) channel.onmessage = sync;
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) sync();
 });
+function demolishCommand(buildingKey) {
+  if (!selected) return;
+  const city = selected.name;
+  confirmDemolishKey = null;
+  if (typeof isOnline === "function" && isOnline()) {
+    return sendOnlineDemolish(city, buildingKey);
+  }
+  return commitOrder((s) => {
+    demolishBuilding(s, city, buildingKey);
+  });
+}
+function gameDayOf(ts) {
+  if (!live || !live.start) return 1;
+  return 1 + Math.max(0, Math.floor((ts - live.start) / 86400000));
+}
 function command(key, cancel, jobStart) {
   if (!selected) return;
   const city = selected.name;
@@ -189,11 +207,19 @@ const countdown = (ms) => {
   const seconds = Math.max(0, Math.ceil(ms / 1000));
   return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
 };
-function logHtml() {
-  return live.log
+function logHtml(dayFilter = 0) {
+  const entries = dayFilter > 0
+    ? live.log.filter((e) => gameDayOf(e.time) === dayFilter)
+    : live.log;
+  if (!entries.length) {
+    return '<li><time>—</time><span>Chưa có ghi nhận trong ngày này.</span></li>';
+  }
+  return entries
     .map(
       (e) =>
-        "<li><time>" +
+        "<li><time>N" +
+        gameDayOf(e.time) +
+        " " +
         new Date(e.time).toLocaleTimeString("vi-VN", {
           hour: "2-digit",
           minute: "2-digit",
@@ -355,6 +381,21 @@ function renderCity(c) {
                           : " · Xung kích") +
               "</div>"
             : "";
+      const canDemolish =
+        lane === "build" &&
+        curLv >= 1 &&
+        !c.jobs.some((j) => j.key === key && projects[j.key]?.lane === "build");
+      const demolishHtml = canDemolish
+        ? confirmDemolishKey === key
+          ? '<div class="demolishRow"><button type="button" class="demolishConfirmBtn" data-demolish-confirm="' +
+            key +
+            '">Xác nhận phá (+40%)</button><button type="button" class="demolishCancelBtn" data-demolish-cancel="1">Hủy</button></div>'
+          : '<button type="button" class="demolishBtn" data-demolish-arm="' +
+            key +
+            '">Phá dỡ cấp ' +
+            curLv +
+            "</button>"
+        : "";
       return (
         '<div class="offer"><div><strong>' +
         p.label +
@@ -363,7 +404,7 @@ function renderCity(c) {
         subNote +
         '<div class="cost">' +
         cost +
-        '</div></div><button data-project="' +
+        '</div></div><div class="offerActions"><button data-project="' +
         key +
         '" ' +
         (reason ? "disabled" : "") +
@@ -372,7 +413,9 @@ function renderCity(c) {
           (lane === "build" ? "Xây" : "Huy động") +
             " · " +
             countdown(t.duration * 1000)) +
-        "</button></div>"
+        "</button>" +
+        demolishHtml +
+        "</div></div>"
       );
     })
     .join("");
@@ -464,7 +507,7 @@ function renderInteractiveGuide() {
           "</button></li>",
       )
       .join("") +
-    '</ol><p class="guideFoot">Kéo bản đồ để di chuyển · Lăn chuột/chụm ngón để thu phóng · Nhấn Esc để đóng bảng.</p>';
+    '</ol><p class="guideFoot">Kéo bản đồ để di chuyển · Phím 1–7 mở nhanh bảng · Space định vị · Esc đóng.</p>';
   replaceContent(el, html);
 }
 function renderMatch() {
@@ -473,7 +516,15 @@ function renderMatch() {
   const dayNum = 1 + Math.floor((live.time - live.start) / 86400000);
   if (typeof isOnline === "function" && isOnline()) {
     const slotLabel = mp.room.viewerSlot === "NORTH" ? "PHƯƠNG BẮC" : "PHƯƠNG NAM";
-    $("#day").textContent = slotLabel + " · NGÀY " + dayNum;
+    const aiTag = live.aiControlledNationId
+      ? " · AI " +
+        (live.aiDifficulty === "HARD"
+          ? "KHÓ"
+          : live.aiDifficulty === "EASY"
+            ? "DỄ"
+            : "CHUẨN")
+      : "";
+    $("#day").textContent = slotLabel + " · NGÀY " + dayNum + aiTag;
   } else {
     $("#day").textContent = "CHIẾN DỊCH · NGÀY " + dayNum;
   }
@@ -533,13 +584,64 @@ function renderMatch() {
           : '<p class="emptyArmy">Ngoại giao hoạt động trong chế độ Phòng mạng.</p>';
     } else if (nationalView === "events") {
       title = "Nhật báo & Báo cáo chiến đấu";
+      const maxDay = Math.max(
+        1,
+        dayNum,
+        ...(live.news || []).map((n) => gameDayOf(n.timeUtc)),
+        ...(live.battleReports || []).map((r) => gameDayOf(r.occurredAtUtc)),
+        ...(live.log || []).map((e) => gameDayOf(e.time)),
+      );
+      const dayButtons = [0, ...Array.from({ length: Math.min(maxDay, 10) }, (_, idx) => maxDay - idx)];
+      const filterBar =
+        '<div class="newsFilterBar">' +
+        [
+          ["all", "Tất cả"],
+          ...(live.online
+            ? [
+                ["news", "Nhật báo"],
+                ["battles", "Chiến sự"],
+              ]
+            : []),
+          ["log", "Nhật ký"],
+        ]
+          .map(
+            ([cat, lbl]) =>
+              '<button type="button" class="newsChip" data-news-cat="' +
+              cat +
+              '" aria-pressed="' +
+              String(newsCatFilter === cat) +
+              '">' +
+              lbl +
+              "</button>",
+          )
+          .join("") +
+        "</div>" +
+        '<div class="newsFilterBar">' +
+        dayButtons
+          .map(
+            (d) =>
+              '<button type="button" class="newsChip" data-news-day="' +
+              d +
+              '" aria-pressed="' +
+              String(newsDayFilter === d) +
+              '">' +
+              (d === 0 ? "Mọi ngày" : "Ngày " + d) +
+              "</button>",
+          )
+          .join("") +
+        "</div>";
       html =
-        (typeof renderCampaignNewsAndBattlesHtml === "function" && live.online
-          ? renderCampaignNewsAndBattlesHtml()
+        filterBar +
+        (typeof renderCampaignNewsAndBattlesHtml === "function" &&
+        live.online &&
+        newsCatFilter !== "log"
+          ? renderCampaignNewsAndBattlesHtml(newsDayFilter, newsCatFilter)
           : "") +
-        '<h4 class="subHead">Nhật ký chỉ huy</h4><ol class="eventList">' +
-        logHtml() +
-        "</ol>";
+        (newsCatFilter === "all" || newsCatFilter === "log"
+          ? '<h4 class="subHead">Nhật ký chỉ huy</h4><ol class="eventList">' +
+            logHtml(newsDayFilter) +
+            "</ol>"
+          : "");
     } else {
       const atWar = live.online && live.diplomacy?.relation === "WAR";
       const showEnemyTargets = Boolean(choosingDestination && atWar);
@@ -601,6 +703,7 @@ $("#cityTabs").onclick = (e) => {
   const b = e.target.closest("[data-city-tab]");
   if (b) {
     cityTab = b.dataset.cityTab;
+    confirmDemolishKey = null;
     renderMatch();
   }
 };
@@ -608,14 +711,29 @@ $("#cityBody").onclick = (e) => {
   const b = e.target.closest("button");
   if (!b || b.disabled) return;
   if (b.dataset.project) {
+    confirmDemolishKey = null;
     if (typeof sfx !== "undefined") {
       sfx.play(projects[b.dataset.project]?.lane === "mobilize" ? "mobilize" : "build");
     }
     command(b.dataset.project, false, 0);
   }
   if (b.dataset.cancel) {
+    confirmDemolishKey = null;
     if (typeof sfx !== "undefined") sfx.play("click");
     command(b.dataset.cancel, true, Number(b.dataset.start));
+  }
+  if (b.dataset.demolishArm) {
+    if (typeof sfx !== "undefined") sfx.play("click");
+    confirmDemolishKey = b.dataset.demolishArm;
+    renderMatch();
+  }
+  if (b.dataset.demolishCancel) {
+    confirmDemolishKey = null;
+    renderMatch();
+  }
+  if (b.dataset.demolishConfirm) {
+    if (typeof sfx !== "undefined") sfx.play("click");
+    demolishCommand(b.dataset.demolishConfirm);
   }
 };
 $("#guideBody").onclick = (e) => {
@@ -630,6 +748,18 @@ $("#guideBody").onclick = (e) => {
   }
 };
 $("#nationalBody").onclick = (e) => {
+  const dayBtn = e.target.closest("[data-news-day]");
+  if (dayBtn) {
+    newsDayFilter = Number(dayBtn.dataset.newsDay) || 0;
+    renderMatch();
+    return;
+  }
+  const catBtn = e.target.closest("[data-news-cat]");
+  if (catBtn) {
+    newsCatFilter = catBtn.dataset.newsCat || "all";
+    renderMatch();
+    return;
+  }
   const b = e.target.closest("[data-town]");
   if (b) {
     panel(null);

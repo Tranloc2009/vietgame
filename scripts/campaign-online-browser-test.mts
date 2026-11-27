@@ -533,13 +533,31 @@ async function shutdownServer(server: BootedServer): Promise<void> {
             live.victoryPointsByNation?.nat_south_rep === 310
         );
 
-        // Verify Newspaper & Battle Reports in #menuEvents (Báo chí)
+        // Verify Newspaper & Battle Reports + T08 Day/Category Filter Chips in #menuEvents (Báo chí)
         await press(pNorth, '#menuEvents');
         const newsText = (await pNorth.locator('#nationalBody').textContent()) || '';
         assert.ok(newsText.includes('Nhật báo chiến sự'));
         assert.ok(newsText.includes('Báo cáo chiến đấu'));
         assert.ok(newsText.includes('Quảng Ngãi'));
+        await pNorth.locator('[data-news-cat="battles"]').waitFor({ state: 'visible' });
+        await press(pNorth, '[data-news-cat="battles"]');
+        const battlesOnlyText = (await pNorth.locator('#nationalBody').textContent()) || '';
+        assert.ok(battlesOnlyText.includes('Báo cáo chiến đấu'));
+        assert.ok(!battlesOnlyText.includes('Nhật báo chiến sự'));
+        await press(pNorth, '[data-news-day="1"]');
+        await press(pNorth, '[data-news-cat="all"]');
+        await press(pNorth, '[data-news-day="0"]');
         await press(pNorth, '[data-close="national"]');
+
+        // T08 UI Check: Building Demolition inline confirmation on Đà Nẵng (base Lv1 -> Lv0 with +40% salvage)
+        await press(pNorth, '#menuCity');
+        await pNorth.locator('.townRow').filter({ hasText: 'Đà Nẵng' }).click();
+        await press(pNorth, '[data-city-tab="build"]');
+        await pNorth.locator('[data-demolish-arm="base"]').waitFor({ state: 'visible' });
+        await press(pNorth, '[data-demolish-arm="base"]');
+        await pNorth.locator('[data-demolish-confirm="base"]').waitFor({ state: 'visible' });
+        await press(pNorth, '[data-demolish-confirm="base"]');
+        await pNorth.waitForFunction(() => (live.cities['Đà Nẵng']?.base ?? 1) === 0);
 
         // South surrenders via #menuOnline -> verify #victoryBanner renders on BOTH North and South!
         await press(pSouth, '#menuOnline');
@@ -558,23 +576,34 @@ async function shutdownServer(server: BootedServer): Promise<void> {
         const replay = server.store.verifyMatchReplay(matchId);
         assert.equal(replay?.verified, true);
 
-        // T06/T07 UI Check (desktop): Leaderboard visible in #mpPanel + 1-click "Đấu với Máy (AI)" mode starts immediately!
+        // T06/T07/T08 UI Check (desktop): Leaderboard + Keyboard shortcuts + AI Difficulty HARD ("Đấu với Máy (AI)")!
         let aiMatchVerified = 'bỏ qua (chỉ kiểm trên desktop)';
         if (vp.name === 'desktop') {
           await press(pNorth, '[data-dismiss-victory="1"]');
+          // Verify T08 keyboard shortcut: pressing "2" opens Nghiên cứu, Escape closes it
+          await pNorth.keyboard.press('2');
+          await pNorth.locator('#national').waitFor({ state: 'visible' });
+          assert.ok(((await pNorth.locator('#nationalTitle').textContent()) || '').includes('Nghiên cứu'));
+          await pNorth.keyboard.press('Escape');
+          await pNorth.locator('#national').waitFor({ state: 'hidden' });
+
           await press(pNorth, '#menuOnline');
           await pNorth.locator('.lbTable').waitFor({ state: 'visible', timeout: 10000 });
           const lbText = (await pNorth.locator('.lbTable').textContent()) || '';
           assert.ok(lbText.includes('Chỉ huy Phương Bắc'));
           await press(pNorth, '#mpLeaveBtn');
+          await pNorth.locator('#mpAiDifficulty').waitFor({ state: 'visible' });
+          await pNorth.locator('#mpAiDifficulty').selectOption('HARD');
           await pNorth.locator('#mpCreateAiRoom').waitFor({ state: 'visible' });
           await press(pNorth, '#mpCreateAiRoom');
           await pNorth.waitForFunction(
-            () => isOnline() === true && Boolean(live.aiControlledNationId)
+            () => isOnline() === true && Boolean(live.aiControlledNationId) && live.aiDifficulty === 'HARD'
           );
+          const dayBadge = (await pNorth.locator('#day').textContent()) || '';
+          assert.ok(dayBadge.includes('AI KHÓ'), `Expected AI KHÓ badge, got "${dayBadge}"`);
           const aiMatchId = await pNorth.evaluate(() => mp.room.matchId);
-          for (let k = 0; k < 10; k += 1) {
-            clock.advanceByMs(20_000);
+          for (let k = 0; k < 12; k += 1) {
+            clock.advanceByMs(12_000);
             server.runtime.scheduler.runCatchUpCycle();
           }
           await pNorth.evaluate(() => pullOnlineSnapshot());
@@ -583,7 +612,7 @@ async function shutdownServer(server: BootedServer): Promise<void> {
           const aiState = server.store.getMatch(aiMatchId)!.state.campaignState!;
           assert.ok(aiState.nations[WORLD_NATIONS.south].learned.includes('motor'));
           assert.ok(aiState.nations[WORLD_NATIONS.south].stats.unitsMobilized >= 1);
-          aiMatchVerified = 'đạt';
+          aiMatchVerified = 'đạt (AI KHÓ)';
         }
 
         assert.deepEqual(errors, []);
