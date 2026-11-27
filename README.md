@@ -1,11 +1,14 @@
 # VIETNAM: THE DIVIDED NATION
 
-## Cập nhật mốc T04 · 27/11/2026 (Nghiên cứu, Huy động & Điều quân trên máy chủ)
+## Cập nhật mốc T05 · 27/11/2026 (Công nghệ WW3, Ngoại giao, Giao tranh, Chiếm đóng & Điểm chiến thắng)
 
 Mở trang chủ `/` (hoặc mở trực tiếp [index.html](index.html) khi chơi ngoại tuyến) để chơi chiến dịch Việt Nam trên bản đồ mới gồm 63 vùng hành chính lịch sử và 60 điểm dân cư. Mã nguồn, dữ liệu địa lý và hướng dẫn đóng gói nằm trong [campaign](campaign/NGUON.md).
 
-- **Chơi đơn ngoại tuyến (IndexedDB):** giữ nguyên toàn bộ luồng nghiên cứu Bộ binh cơ giới I/II, xây xưởng & văn phòng tuyển dụng, huy động, chọn quân, di chuyển, dừng và đổi đích.
-- **Phòng hai người trên bản đồ Việt Nam mới (`vietnam_campaign_v1`):** bấm nút **Phòng mạng** ngay trên trang chủ `/` khi chạy máy chủ. Hai tài khoản độc lập đăng ký/đăng nhập, tạo hoặc vào phòng bằng mã mời, sẵn sàng và bắt đầu ngay trên bản đồ Việt Nam mới (chia cân bằng 30 thành phố Phương Bắc / 30 thành phố Phương Nam). Toàn bộ nghiên cứu, xây văn phòng tuyển dụng, huy động đơn vị (mã ổn định `unt_vn_0001`), di chuyển/dừng/đổi đích, kiểm tra quyền sở hữu và ẩn hàng đợi/lệnh đối phương đều chạy trên máy chủ SQLite + WebSocket và phục hồi nhất quán sau tải lại trang hoặc khởi động lại máy chủ.
+- **Chơi đơn ngoại tuyến (IndexedDB):** giữ nguyên bản lưu cũ (tự động nâng cấp dữ liệu mới) cùng đầy đủ 5 công trình, 5 công nghệ 3 nhánh Lục quân, huy động, chọn quân, di chuyển, dừng và đổi đích.
+- **Phòng hai người trên bản đồ Việt Nam mới (`vietnam_campaign_v1`):** bấm nút **Phòng mạng** ngay trên trang chủ `/` khi chạy máy chủ. Hai tài khoản độc lập đăng ký/đăng nhập, tạo hoặc vào phòng bằng mã mời, sẵn sàng và bắt đầu ngay trên bản đồ Việt Nam mới (chia cân bằng 30 thành phố Phương Bắc / 30 thành phố Phương Nam, 320 vs 320 điểm chiến thắng, mục tiêu **400 VP**). Toàn bộ vòng lặp WW3 đều chạy tất định trên máy chủ SQLite + WebSocket:
+  - **Cây công nghệ 3 nhánh & 5 công trình:** Bộ binh cơ giới I/II, Xe trinh sát chiến đấu I (`2.25°` radar), Xe tăng chủ lực I, Pháo binh dã chiến I (`1.25°` pháo kích); Xưởng công nghiệp, Văn phòng tuyển dụng, Căn cứ lục quân, Hầm công sự (phòng thủ tới +60%) và Bệnh viện quân y (hồi HP mỗi 30 giây).
+  - **Ngoại giao & Tình báo:** Hòa bình / Tuyên chiến / Đề nghị & Chấp nhận hòa bình / Chia sẻ tình báo ngay trong mục **Ngoại giao**; ẩn hoàn toàn hàng đợi, kho, cấp công trình và tuyến hành quân đối phương theo tầm nhìn.
+  - **Combat Engine, Chiếm đóng & Kết trận:** Giao tranh cận chiến theo tick 10 giây, pháo kích tầm xa không chịu phản công, luật chỉ bộ binh (`canConquer`) chiếm thành phố, xóa hàng đợi thành phố bị chiếm, Nhật báo chiến sự & Báo cáo chiến đấu trong mục **Báo chí**, tự động kết thúc phòng trong SQLite khi đạt 400 VP / tổng chiếm đóng / đầu hàng và hiển thị bảng kết trận.
 - **Phòng 1955 cũ (`/rooms.html`):** giữ nguyên kịch bản 72 vùng, dữ liệu, migration (`001`–`004`) và bộ hồi quy để đối chiếu hành vi. Chi tiết nghiệm thu nằm ở [báo cáo kiểm thử](docs/TEST_REPORT.md) và [mốc kế tiếp](docs/NEXT_TASK.md).
 
 ## Nền tảng phòng nhiều người chơi

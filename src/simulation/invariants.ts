@@ -324,6 +324,11 @@ export function assertSimulationInvariants(state: MatchState): void {
       if (!state.nations[city.ownerNationId] || !cs.nations[city.ownerNationId]) {
         violations.push(`campaignState city "${city.cityId}" owner "${city.ownerNationId}" missing`);
       }
+      if (state.regions[city.cityId] && state.regions[city.cityId].controllerNationId !== city.ownerNationId) {
+        violations.push(
+          `campaignState city "${city.cityId}" owner "${city.ownerNationId}" diverges from region controller "${state.regions[city.cityId].controllerNationId}"`
+        );
+      }
       const buildJobs = city.jobs.filter((j) => j.lane === 'build');
       const mobilizeJobs = city.jobs.filter((j) => j.lane === 'mobilize');
       if (buildJobs.length > 1) {
@@ -343,6 +348,9 @@ export function assertSimulationInvariants(state: MatchState): void {
       }
       if (!state.units[unit.unitId]) {
         violations.push(`campaignState unit "${unit.unitId}" missing mirror in state.units`);
+      }
+      if (unit.hp < 1 || unit.hp > unit.maxHp) {
+        violations.push(`campaignState unit "${unit.unitId}" invalid hp=${unit.hp}/${unit.maxHp}`);
       }
       if (unit.displayNumber > maxDisplayNum) {
         maxDisplayNum = unit.displayNumber;

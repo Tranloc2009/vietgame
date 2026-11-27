@@ -1,17 +1,48 @@
 "use strict";
 const doctrines = {
   motor: {
+    branch: "BỘ BINH",
+    tier: "I",
     name: "Bộ binh cơ giới I",
-    description: "Mở huy động bộ binh cơ giới.",
+    description: "Mở huy động bộ binh cơ giới có khả năng chiếm đóng thành phố.",
     cost: [180, 0, 0, 0, 80, 0, 240],
     seconds: 45,
     requires: null,
   },
   motor2: {
+    branch: "BỘ BINH",
+    tier: "II",
     name: "Bộ binh cơ giới II",
-    description: "Rút thời gian mỗi lệnh di chuyển mới từ 32 xuống 24 giây.",
+    description: "Rút thời gian lệnh di chuyển mới từ 32 xuống 24 giây và +20% hỏa lực.",
     cost: [240, 0, 0, 0, 120, 0, 360],
     seconds: 65,
+    requires: "motor",
+  },
+  recon: {
+    branch: "THIẾT GIÁP",
+    tier: "I",
+    name: "Xe trinh sát chiến đấu I",
+    description: "Mở xe trinh sát tốc độ cao (22s), tầm quan sát 2.25°.",
+    cost: [150, 90, 0, 30, 60, 0, 220],
+    seconds: 45,
+    requires: null,
+  },
+  tank: {
+    branch: "THIẾT GIÁP",
+    tier: "II",
+    name: "Xe tăng chủ lực I",
+    description: "Mở xe tăng chủ lực giáp nặng, hỏa lực mạnh (cần Căn cứ cấp 2).",
+    cost: [220, 180, 60, 50, 120, 0, 420],
+    seconds: 75,
+    requires: "recon",
+  },
+  artillery: {
+    branch: "HỖ TRỢ",
+    tier: "I",
+    name: "Pháo binh dã chiến I",
+    description: "Mở pháo binh bắn tầm xa 1.25° không chịu phản công cận chiến.",
+    cost: [200, 140, 0, 60, 100, 0, 340],
+    seconds: 60,
     requires: "motor",
   },
 };
@@ -21,10 +52,29 @@ projects.motor = {
   seconds: 50,
   cost: [170, 90, 40, 0, 0, 85, 220],
 };
+projects.recon = {
+  label: "Xe trinh sát",
+  lane: "mobilize",
+  seconds: 45,
+  cost: [130, 110, 50, 30, 0, 65, 240],
+};
+projects.tank = {
+  label: "Xe tăng chủ lực",
+  lane: "mobilize",
+  seconds: 70,
+  cost: [210, 200, 90, 40, 50, 95, 420],
+};
+projects.artillery = {
+  label: "Pháo binh dã chiến",
+  lane: "mobilize",
+  seconds: 60,
+  cost: [190, 140, 30, 50, 30, 75, 330],
+};
 const nodeByName = new Map(
   towns.map((t) => [t.name, { lon: +t.lon, lat: +t.lat }]),
 );
 function spawnCounter(s, city, key) {
+  const st = unitStats[key] || unitStats.reserve;
   s.units.push({
     id: s.nextUnit++,
     key,
@@ -32,10 +82,24 @@ function spawnCounter(s, city, key) {
     position: nodeByName.get(city),
     trip: null,
     rev: 0,
+    hp: st.maxHp,
+    maxHp: st.maxHp,
   });
 }
 function upgradeCampaign(s) {
-  if (s.units) return;
+  for (const c of Object.values(s.cities)) {
+    if (c.base === undefined) c.base = 0;
+    if (c.bunker === undefined) c.bunker = 0;
+    if (c.hospital === undefined) c.hospital = 0;
+  }
+  if (s.units) {
+    for (const u of s.units) {
+      const st = unitStats[u.key] || unitStats.reserve;
+      if (u.hp === undefined) u.hp = st.maxHp;
+      if (u.maxHp === undefined) u.maxHp = st.maxHp;
+    }
+    return;
+  }
   s.units = [];
   s.nextUnit = 1;
   s.learned = [];
@@ -133,8 +197,9 @@ function moveOrder(s, id, to, rev) {
   if (u.city && u.key === "reserve") s.cities[u.city].reserve--;
   u.city = null;
   u.rev++;
+  const st = unitStats[u.key] || unitStats.reserve;
   const duration =
-    u.key === "reserve" ? 45 : s.learned.includes("motor2") ? 24 : 32;
+    u.key === "motor" && s.learned.includes("motor2") ? 24 : st.moveSeconds;
   u.trip =
     to === null
       ? null

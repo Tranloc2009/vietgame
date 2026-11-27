@@ -4,6 +4,7 @@ import {
   asFixedPoint,
   asUtcEpochMs,
   CAMPAIGN_HOUR_MS,
+  CAMPAIGN_VICTORY_TARGET_VP,
   CampaignCityState,
   CampaignMatchState,
   CampaignResourceTuple,
@@ -157,33 +158,67 @@ export function createVietnamCampaignMatchState(options: {
       name: bp.name,
       lon: bp.lon,
       lat: bp.lat,
-      capital: bp.capital,
+      capital: bp.capital || bp.name === 'TP. Hồ Chí Minh',
       rank: bp.rank,
       material: bp.material,
       ownerNationId,
       factory: 0,
       office: 0,
+      base: 0,
+      bunker: 0,
+      hospital: 0,
       reserve: 0,
       jobs: [],
     };
   }
 
+  const computeInitialVp = (nationId: NationId): number =>
+    Object.values(campaignCities)
+      .filter((c) => c.ownerNationId === nationId)
+      .reduce((acc, c) => acc + (c.capital ? 30 : 10), 0);
+
   const campaignState: CampaignMatchState = {
     startUtc: createdAtUtc,
     timeUtc: createdAtUtc,
     nextUnitNumber: 1,
+    nextReportNumber: 1,
+    victoryTargetVp: CAMPAIGN_VICTORY_TARGET_VP,
+    victoryPointsByNation: {
+      [WORLD_NATIONS.north]: computeInitialVp(WORLD_NATIONS.north),
+      [WORLD_NATIONS.south]: computeInitialVp(WORLD_NATIONS.south),
+    },
+    diplomacy: {
+      relation: 'PEACE',
+      peaceProposedByNationId: null,
+      intelProposedByNationId: null,
+      sharedIntelActive: false,
+      updatedAtUtc: createdAtUtc,
+    },
+    victory: null,
     nations: {
       [WORLD_NATIONS.north]: {
         nationId: WORLD_NATIONS.north,
         balance: makeInitialCampaignBalance(),
         learned: [],
         study: null,
+        stats: {
+          unitsMobilized: 0,
+          unitsLost: 0,
+          enemyUnitsDestroyed: 0,
+          citiesCaptured: 0,
+        },
       },
       [WORLD_NATIONS.south]: {
         nationId: WORLD_NATIONS.south,
         balance: makeInitialCampaignBalance(),
         learned: [],
         study: null,
+        stats: {
+          unitsMobilized: 0,
+          unitsLost: 0,
+          enemyUnitsDestroyed: 0,
+          citiesCaptured: 0,
+        },
       },
     },
     cities: campaignCities,
@@ -197,6 +232,17 @@ export function createVietnamCampaignMatchState(options: {
         text: 'Mở phòng chiến dịch Việt Nam.',
       },
     ],
+    news: [
+      {
+        newsId: 'news_0001',
+        timeUtc: createdAtUtc,
+        category: 'SYSTEM',
+        headline: 'Chiến dịch Việt Nam khai màn',
+        detail:
+          'Phương Bắc (320 điểm) và Phương Nam (320 điểm) bước vào thế giằng co. Đạt 400 điểm chiến thắng hoặc kiểm soát toàn bộ thành phố để giành thắng lợi.',
+      },
+    ],
+    battleReports: [],
   };
 
   const hiddenIntelDigest = createHash('sha256')

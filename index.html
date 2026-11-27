@@ -1310,6 +1310,95 @@ footer {
   font-size: 11px;
   text-decoration: underline;
 }
+.routeOverlay polyline.assault {
+  stroke: #ff7e66;
+}
+.armyPin.fighting {
+  outline: 2px solid #ff6b57;
+  box-shadow: 0 0 8px #ff4f3a;
+}
+.offerNote {
+  font-size: 11px;
+  color: #b7c3ad;
+  margin-top: 2px;
+}
+.subHead {
+  margin: 0;
+  padding: 7px 12px;
+  font-size: 11px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  background: #2f3e34;
+  color: #d7d4b3;
+  border-bottom: 1px solid #53634f;
+}
+.subHead.warHead {
+  background: #4e2b26;
+  color: #ffd8cb;
+  border-color: #8c5249;
+}
+.enemyTownRow {
+  background: #3d2724;
+  color: #ffd9ce;
+}
+.dipWrap {
+  padding: 10px 12px;
+  display: grid;
+  gap: 10px;
+}
+.vpRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.dipWrap progress {
+  width: 100%;
+  height: 7px;
+  accent-color: #b8c27d;
+}
+.dipActions {
+  display: grid;
+  gap: 6px;
+}
+.dipBtnWar {
+  background: #7c3228;
+  color: #fff0e6;
+  border-color: #bd6a5c;
+  padding: 7px 10px;
+  font-weight: 600;
+}
+.dipBtnWar:hover {
+  background: #983d30;
+}
+.mpTag.warTag {
+  background: #7c3228;
+  color: #ffece4;
+  border-color: #c77667;
+}
+#victoryBanner {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(400px, calc(100% - 24px));
+  z-index: 9;
+  border-top: 3px solid #d9c372;
+}
+.victoryBody {
+  padding: 14px 16px;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+}
+.victoryBody strong {
+  color: #ffe58f;
+  font-size: 16px;
+  letter-spacing: 0.6px;
+}
+.victoryBody p {
+  margin: 0;
+  color: #dce1ce;
+}
+
 
 
 </style></head>
@@ -1317,10 +1406,11 @@ footer {
 <main id="stage" aria-label="Bản đồ chiến dịch Việt Nam">
 <canvas id="map" tabindex="0" aria-label="Bản đồ Việt Nam. Dùng phím mũi tên để di chuyển, cộng trừ để thu phóng."></canvas>
 <div id="unitMarkers"></div><header class="plate profile"><span class="flag" aria-hidden="true">★</span><div><small id="day">CHIẾN DỊCH · NGÀY 1</small><h1>VIỆT NAM</h1></div><button id="help" title="Hướng dẫn" aria-label="Hướng dẫn"><i data-icon="info"></i></button></header>
-<nav class="plate commands" aria-label="Menu trong trận"><button id="menuCity" title="Thành phố"><i data-icon="city"></i>Thành phố</button><button id="menuStudy"><i data-icon="study"></i>Nghiên cứu</button><button id="menuUnits"><i data-icon="unit"></i>Đơn vị</button><button id="menuStock" title="Kho quốc gia"><i data-icon="box"></i>Kho</button><button id="menuEvents" title="Nhật ký sự kiện"><i data-icon="news"></i>Sự kiện</button><button id="menuOnline" title="Phòng nhiều người chơi"><i data-icon="online"></i>Phòng mạng</button></nav>
+<nav class="plate commands" aria-label="Menu trong trận"><button id="menuCity" title="Thành phố"><i data-icon="city"></i>Thành phố</button><button id="menuStudy"><i data-icon="study"></i>Nghiên cứu</button><button id="menuUnits"><i data-icon="unit"></i>Đơn vị</button><button id="menuDiplomacy" title="Ngoại giao & Điểm chiến thắng"><i data-icon="diplomacy"></i>Ngoại giao</button><button id="menuStock" title="Kho quốc gia"><i data-icon="box"></i>Kho</button><button id="menuEvents" title="Nhật báo & Sự kiện"><i data-icon="news"></i>Báo chí</button><button id="menuOnline" title="Phòng nhiều người chơi"><i data-icon="online"></i>Phòng mạng</button></nav>
 <section class="plate resources" aria-label="Nguồn lực quốc gia" id="resources"></section>
 <aside class="plate dossier" id="national" hidden><div class="panelHead"><h2 id="nationalTitle"></h2><button data-close="national" aria-label="Đóng menu trong trận">×</button></div><div id="nationalBody"></div></aside>
 <aside class="plate dossier" id="mpPanel" hidden aria-label="Phòng chiến dịch nhiều người chơi"><div class="panelHead"><h2 id="mpPanelTitle">Phòng chiến dịch trực tuyến</h2><button data-close="mpPanel" aria-label="Đóng phòng mạng">×</button></div><div id="mpBody"></div></aside>
+<section class="plate" id="victoryBanner" hidden aria-label="Kết quả chiến dịch"></section>
 <nav class="plate modes" aria-label="Chế độ bản đồ"><button data-mode="political" aria-pressed="true"><i data-icon="layers"></i>Chính trị</button><button data-mode="terrain" aria-pressed="false"><i data-icon="mountain"></i>Địa hình</button></nav>
 <div id="compass" aria-label="Hướng Bắc"><b>N</b><svg viewBox="0 0 46 60"><path fill="#f0e5c0" d="M23 2 33 44 23 37Z"/><path fill="#556861" stroke="#e4dab5" d="M23 2 13 44 23 37Z"/><path d="M4 32h38" stroke="#d9d6b4"/></svg></div>
 <button class="edge plate" id="places" aria-expanded="false"><i data-icon="city"></i><span>Địa danh</span></button>
@@ -1586,6 +1676,39 @@ function draw() {
         );
     }
   }
+  // Draw tactical radar / artillery range rings for the currently selected friendly unit
+  if (
+    typeof activeUnit !== "undefined" &&
+    activeUnit !== null &&
+    typeof live !== "undefined" &&
+    live?.units
+  ) {
+    const u = live.units.find((a) => a.id === activeUnit && a.owned !== false);
+    if (u && typeof pointAt === "function" && typeof simNow === "function") {
+      const pos = pointAt(u, simNow());
+      const [ux, uy] = projectPoint(pos.lon, pos.lat);
+      const st = typeof unitStats !== "undefined" ? unitStats[u.key] : null;
+      const visionDeg = st?.visionDeg || 1.25;
+      ctx.save();
+      ctx.setLineDash([5, 5]);
+      ctx.strokeStyle = "#b7d9a066";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.ellipse(ux, uy, visionDeg * sx, visionDeg * sy, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      if (st?.ranged) {
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = "#f28b6b99";
+        ctx.fillStyle = "#c94c3818";
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.ellipse(ux, uy, 1.25 * sx, 1.25 * sy, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
   const km =
     [5, 10, 20, 50, 100, 200, 500]
       .filter(
@@ -1781,12 +1904,40 @@ const projects = {
     lane: "build",
     seconds: 60,
     cost: [200, 150, 0, 25, 0, 0, 300],
+    maxLevel: 5,
+    note: "+5 sản lượng địa phương/h",
   },
   office: {
     label: "Văn phòng tuyển dụng",
     lane: "build",
     seconds: 45,
     cost: [150, 60, 0, 0, 0, 0, 200],
+    maxLevel: 5,
+    note: "+2 nhân lực/h · mở huy động",
+  },
+  base: {
+    label: "Căn cứ lục quân",
+    lane: "build",
+    seconds: 55,
+    cost: [180, 120, 0, 30, 0, 0, 260],
+    maxLevel: 3,
+    note: "Mở thiết giáp/pháo · +10% phòng thủ",
+  },
+  bunker: {
+    label: "Hầm công sự",
+    lane: "build",
+    seconds: 50,
+    cost: [140, 100, 0, 0, 40, 0, 220],
+    maxLevel: 3,
+    note: "+15% phòng thủ thành phố/cấp",
+  },
+  hospital: {
+    label: "Bệnh viện quân y",
+    lane: "build",
+    seconds: 55,
+    cost: [160, 80, 0, 40, 0, 0, 250],
+    maxLevel: 3,
+    note: "Hồi máu quân đồn trú định kỳ",
   },
   reserve: {
     label: "Đội dự bị",
@@ -1795,12 +1946,98 @@ const projects = {
     cost: [120, 40, 20, 0, 0, 75, 150],
   },
 };
+const unitStats = {
+  reserve: {
+    glyph: "▣",
+    maxHp: 15,
+    softAttack: 3,
+    hardAttack: 1,
+    defense: 4,
+    moveSeconds: 45,
+    canConquer: true,
+    ranged: false,
+    visionDeg: 1.25,
+    upkeep: [1, 0, 2],
+    reqDoctrine: null,
+    reqOffice: 1,
+    reqBase: 0,
+  },
+  motor: {
+    glyph: "▣",
+    maxHp: 20,
+    softAttack: 6,
+    hardAttack: 3,
+    defense: 6,
+    moveSeconds: 32,
+    canConquer: true,
+    ranged: false,
+    visionDeg: 1.35,
+    upkeep: [1, 0, 3],
+    reqDoctrine: "motor",
+    reqOffice: 1,
+    reqBase: 0,
+  },
+  recon: {
+    glyph: "◈",
+    maxHp: 22,
+    softAttack: 5,
+    hardAttack: 4,
+    defense: 5,
+    moveSeconds: 22,
+    canConquer: false,
+    ranged: false,
+    visionDeg: 2.25,
+    upkeep: [1, 1, 4],
+    reqDoctrine: "recon",
+    reqOffice: 1,
+    reqBase: 1,
+  },
+  tank: {
+    glyph: "◆",
+    maxHp: 42,
+    softAttack: 9,
+    hardAttack: 12,
+    defense: 11,
+    moveSeconds: 36,
+    canConquer: false,
+    ranged: false,
+    visionDeg: 1.35,
+    upkeep: [2, 2, 7],
+    reqDoctrine: "tank",
+    reqOffice: 1,
+    reqBase: 2,
+  },
+  artillery: {
+    glyph: "◎",
+    maxHp: 16,
+    softAttack: 7,
+    hardAttack: 5,
+    defense: 3,
+    moveSeconds: 42,
+    canConquer: false,
+    ranged: true,
+    visionDeg: 1.45,
+    upkeep: [2, 0, 5],
+    reqDoctrine: "artillery",
+    reqOffice: 1,
+    reqBase: 1,
+  },
+};
 const hour = 3600000;
 function startCampaign(names, now) {
   const cities = Object.fromEntries(
     names.map((name, i) => [
       name,
-      { material: i % 5, factory: 0, office: 0, reserve: 0, jobs: [] },
+      {
+        material: i % 5,
+        factory: 0,
+        office: 0,
+        base: 0,
+        bunker: 0,
+        hospital: 0,
+        reserve: 0,
+        jobs: [],
+      },
     ]),
   );
   return {
@@ -1825,8 +2062,10 @@ function ledger(s) {
   }
   for (const unit of s.units) {
     if (unit.owned === false) continue;
-    expense[0]++;
-    expense[6] += unit.key === "motor" ? 3 : 2;
+    const st = unitStats[unit.key] || unitStats.reserve;
+    expense[0] += st.upkeep[0];
+    expense[2] += st.upkeep[1];
+    expense[6] += st.upkeep[2];
   }
   return { income, expense, net: income.map((v, i) => v - expense[i]) };
 }
@@ -1851,7 +2090,9 @@ function settle(s, now) {
   for (const { name, c, job } of done) {
     accrue(s, job.end);
     if (projects[job.key].lane === "mobilize") spawnCounter(s, name, job.key);
-    if (job.key !== "motor") c[job.key]++;
+    if (projects[job.key].lane === "build" || job.key === "reserve") {
+      c[job.key] = (c[job.key] || 0) + 1;
+    }
     c.jobs = c.jobs.filter((j) => j !== job);
     addLog(s, job.end, name, "Hoàn thành " + projects[job.key].label + ".");
   }
@@ -1861,7 +2102,7 @@ function settle(s, now) {
 }
 function terms(c, key) {
   const p = projects[key],
-    level = p.lane === "build" ? c[key] + 1 : 1;
+    level = p.lane === "build" ? (c[key] || 0) + 1 : 1;
   return {
     level,
     cost: p.cost.map((v) => v * level),
@@ -1882,10 +2123,17 @@ function order(s, city, key, cancel = false) {
     return;
   }
   if (j) throw Error("Hàng đợi này đang bận.");
-  if (key === "motor" && !s.learned.includes("motor"))
-    throw Error("Cần nghiên cứu bộ binh cơ giới I.");
-  if (p.lane === "mobilize" && !c.office)
-    throw Error("Cần văn phòng tuyển dụng cấp 1.");
+  if (p.lane === "build" && p.maxLevel && (c[key] || 0) >= p.maxLevel)
+    throw Error(p.label + " đã đạt cấp tối đa.");
+  if (p.lane === "mobilize") {
+    const st = unitStats[key];
+    if (st?.reqDoctrine && !s.learned.includes(st.reqDoctrine))
+      throw Error("Cần nghiên cứu " + doctrines[st.reqDoctrine].name + ".");
+    if (st && (c.office || 0) < st.reqOffice)
+      throw Error("Cần văn phòng tuyển dụng cấp " + st.reqOffice + ".");
+    if (st && (c.base || 0) < st.reqBase)
+      throw Error("Cần căn cứ lục quân cấp " + st.reqBase + ".");
+  }
   const { cost, duration } = terms(c, key);
   if (cost.some((v, i) => v * hour > s.balance[i]))
     throw Error("Kho không đủ tài nguyên.");
@@ -1896,17 +2144,48 @@ function order(s, city, key, cancel = false) {
 </script><script>"use strict";
 const doctrines = {
   motor: {
+    branch: "BỘ BINH",
+    tier: "I",
     name: "Bộ binh cơ giới I",
-    description: "Mở huy động bộ binh cơ giới.",
+    description: "Mở huy động bộ binh cơ giới có khả năng chiếm đóng thành phố.",
     cost: [180, 0, 0, 0, 80, 0, 240],
     seconds: 45,
     requires: null,
   },
   motor2: {
+    branch: "BỘ BINH",
+    tier: "II",
     name: "Bộ binh cơ giới II",
-    description: "Rút thời gian mỗi lệnh di chuyển mới từ 32 xuống 24 giây.",
+    description: "Rút thời gian lệnh di chuyển mới từ 32 xuống 24 giây và +20% hỏa lực.",
     cost: [240, 0, 0, 0, 120, 0, 360],
     seconds: 65,
+    requires: "motor",
+  },
+  recon: {
+    branch: "THIẾT GIÁP",
+    tier: "I",
+    name: "Xe trinh sát chiến đấu I",
+    description: "Mở xe trinh sát tốc độ cao (22s), tầm quan sát 2.25°.",
+    cost: [150, 90, 0, 30, 60, 0, 220],
+    seconds: 45,
+    requires: null,
+  },
+  tank: {
+    branch: "THIẾT GIÁP",
+    tier: "II",
+    name: "Xe tăng chủ lực I",
+    description: "Mở xe tăng chủ lực giáp nặng, hỏa lực mạnh (cần Căn cứ cấp 2).",
+    cost: [220, 180, 60, 50, 120, 0, 420],
+    seconds: 75,
+    requires: "recon",
+  },
+  artillery: {
+    branch: "HỖ TRỢ",
+    tier: "I",
+    name: "Pháo binh dã chiến I",
+    description: "Mở pháo binh bắn tầm xa 1.25° không chịu phản công cận chiến.",
+    cost: [200, 140, 0, 60, 100, 0, 340],
+    seconds: 60,
     requires: "motor",
   },
 };
@@ -1916,10 +2195,29 @@ projects.motor = {
   seconds: 50,
   cost: [170, 90, 40, 0, 0, 85, 220],
 };
+projects.recon = {
+  label: "Xe trinh sát",
+  lane: "mobilize",
+  seconds: 45,
+  cost: [130, 110, 50, 30, 0, 65, 240],
+};
+projects.tank = {
+  label: "Xe tăng chủ lực",
+  lane: "mobilize",
+  seconds: 70,
+  cost: [210, 200, 90, 40, 50, 95, 420],
+};
+projects.artillery = {
+  label: "Pháo binh dã chiến",
+  lane: "mobilize",
+  seconds: 60,
+  cost: [190, 140, 30, 50, 30, 75, 330],
+};
 const nodeByName = new Map(
   towns.map((t) => [t.name, { lon: +t.lon, lat: +t.lat }]),
 );
 function spawnCounter(s, city, key) {
+  const st = unitStats[key] || unitStats.reserve;
   s.units.push({
     id: s.nextUnit++,
     key,
@@ -1927,10 +2225,24 @@ function spawnCounter(s, city, key) {
     position: nodeByName.get(city),
     trip: null,
     rev: 0,
+    hp: st.maxHp,
+    maxHp: st.maxHp,
   });
 }
 function upgradeCampaign(s) {
-  if (s.units) return;
+  for (const c of Object.values(s.cities)) {
+    if (c.base === undefined) c.base = 0;
+    if (c.bunker === undefined) c.bunker = 0;
+    if (c.hospital === undefined) c.hospital = 0;
+  }
+  if (s.units) {
+    for (const u of s.units) {
+      const st = unitStats[u.key] || unitStats.reserve;
+      if (u.hp === undefined) u.hp = st.maxHp;
+      if (u.maxHp === undefined) u.maxHp = st.maxHp;
+    }
+    return;
+  }
   s.units = [];
   s.nextUnit = 1;
   s.learned = [];
@@ -2028,8 +2340,9 @@ function moveOrder(s, id, to, rev) {
   if (u.city && u.key === "reserve") s.cities[u.city].reserve--;
   u.city = null;
   u.rev++;
+  const st = unitStats[u.key] || unitStats.reserve;
   const duration =
-    u.key === "reserve" ? 45 : s.learned.includes("motor2") ? 24 : 32;
+    u.key === "motor" && s.learned.includes("motor2") ? 24 : st.moveSeconds;
   u.trip =
     to === null
       ? null
@@ -2092,6 +2405,8 @@ const icons = {
   search: '<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',
   online:
     '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18"/>',
+  diplomacy:
+    '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/>',
 };
 for (const el of /** @type {NodeListOf<HTMLElement>} */ (
   document.querySelectorAll("[data-icon]")
@@ -2431,15 +2746,30 @@ function logHtml() {
 function renderCity(c) {
   if (cityTab === "summary") {
     const prod = cityOutput(c);
+    const totalBuildings =
+      (c.factory || 0) +
+      (c.office || 0) +
+      (c.base || 0) +
+      (c.bunker || 0) +
+      (c.hospital || 0);
+    const defBonus = Math.min(60, (c.base || 0) * 10 + (c.bunker || 0) * 15);
+    const bParts = [];
+    if (c.factory) bParts.push("Xưởng " + c.factory);
+    if (c.office) bParts.push("VP " + c.office);
+    if (c.base) bParts.push("Căn cứ " + c.base);
+    if (c.bunker) bParts.push("Công sự " + c.bunker);
+    if (c.hospital) bParts.push("Quân y " + c.hospital);
     return (
       '<div class="cityStats"><div><small>Sản lượng mỗi ngày</small><b>' +
       art(c.material) +
       materials[c.material] +
       " +" +
       num(prod[c.material] * 24) +
-      "/ngày</b></div><div><small>Công trình</small><b>" +
-      num(c.factory + c.office) +
-      " cấp</b></div><div><small>Lực lượng</small><b>" +
+      "/ngày</b></div><div><small>Công trình" +
+      (defBonus ? " · Thủ +" + defBonus + "%" : "") +
+      "</small><b>" +
+      (bParts.length ? bParts.join(" · ") : num(totalBuildings) + " cấp") +
+      "</b></div><div><small>Lực lượng</small><b>" +
       num(
         live.units.filter(
           (u) => u.city === selected.name && u.owned !== false,
@@ -2482,15 +2812,23 @@ function renderCity(c) {
   return Object.entries(projects)
     .filter(([, p]) => p.lane === lane)
     .map(([key, p]) => {
-      const t = terms(c, key),
-        reason =
-          key === "motor" && !live.learned.includes("motor")
-            ? "Cần nghiên cứu cấp I"
-            : lane === "mobilize" && !c.office
-              ? "Cần văn phòng cấp 1"
-              : t.cost.some((n, i) => n * hour > live.balance[i])
-                ? "Thiếu tài nguyên"
-                : "";
+      const t = terms(c, key);
+      const st = lane === "mobilize" ? unitStats[key] : null;
+      const curLv = lane === "build" ? c[key] || 0 : 0;
+      const reason =
+        lane === "build" && p.maxLevel && curLv >= p.maxLevel
+          ? "Đã tối đa"
+          : st?.reqDoctrine && !live.learned.includes(st.reqDoctrine)
+            ? key === "motor"
+              ? "Cần nghiên cứu cấp I"
+              : "Cần " + doctrines[st.reqDoctrine].name
+            : st && (c.office || 0) < st.reqOffice
+              ? "Cần văn phòng cấp " + st.reqOffice
+              : st && (c.base || 0) < st.reqBase
+                ? "Cần căn cứ cấp " + st.reqBase
+                : t.cost.some((n, i) => n * hour > live.balance[i])
+                  ? "Thiếu tài nguyên"
+                  : "";
       const cost = t.cost
         .map((n, i) =>
           n
@@ -2507,11 +2845,28 @@ function renderCity(c) {
             : "",
         )
         .join("");
+      const subNote =
+        lane === "build" && p.note
+          ? '<div class="offerNote">' + escapeText(p.note) + "</div>"
+          : st
+            ? '<div class="offerNote">HP ' +
+              st.maxHp +
+              " · Công " +
+              st.softAttack +
+              "/" +
+              st.hardAttack +
+              " · Thủ " +
+              st.defense +
+              (st.ranged ? " · Pháo 1.25°" : st.canConquer ? " · Chiếm đất" : " · Xung kích") +
+              "</div>"
+            : "";
       return (
         '<div class="offer"><div><strong>' +
         p.label +
         (lane === "build" ? " · Cấp " + t.level : "") +
-        '</strong><div class="cost">' +
+        "</strong>" +
+        subNote +
+        '<div class="cost">' +
         cost +
         '</div></div><button data-project="' +
         key +
@@ -2585,33 +2940,73 @@ function renderMatch() {
     } else if (nationalView === "stock") {
       title = pickedMaterial < 0 ? "Kho quốc gia" : materials[pickedMaterial];
       html = renderStock(L);
+    } else if (nationalView === "diplomacy") {
+      title = "Ngoại giao & Điểm chiến thắng";
+      html =
+        typeof renderDiplomacyHtml === "function"
+          ? renderDiplomacyHtml()
+          : '<p class="emptyArmy">Ngoại giao hoạt động trong chế độ Phòng mạng.</p>';
     } else if (nationalView === "events") {
-      title = "Nhật ký sự kiện";
-      html = '<ol class="eventList">' + logHtml() + "</ol>";
+      title = "Nhật báo & Báo cáo chiến đấu";
+      html =
+        (typeof renderCampaignNewsAndBattlesHtml === "function" && live.online
+          ? renderCampaignNewsAndBattlesHtml()
+          : "") +
+        '<h4 class="subHead">Nhật ký chỉ huy</h4><ol class="eventList">' +
+        logHtml() +
+        "</ol>";
     } else {
-      const townEntries = towns
+      const atWar = live.online && live.diplomacy?.relation === "WAR";
+      const showEnemyTargets = Boolean(choosingDestination && atWar);
+      const ownedEntries = towns
         .map((t, i) => ({ t, i, c: live.cities[t.name] }))
         .filter(({ c }) => !live.online || c?.owned !== false);
-      title = (live.online ? "Thành phố của bạn · " : "Thành phố · ") + townEntries.length;
-      html = townEntries
-        .map(({ t, i, c }) => {
-          return (
-            '<button class="townRow" data-town="' +
-            i +
-            '"><strong>' +
-            escapeText(t.name) +
-            "</strong><span>" +
-            art(c.material) +
-            (c.jobs.length
-              ? c.jobs.length + " lệnh"
-              : "+" + cityOutput(c)[c.material] + "/h") +
-            "</span></button>"
-          );
-        })
-        .join("");
+      const enemyEntries = showEnemyTargets
+        ? towns
+            .map((t, i) => ({ t, i, c: live.cities[t.name] }))
+            .filter(({ c }) => c?.owned === false)
+        : [];
+      title =
+        (live.online ? "Thành phố của bạn · " : "Thành phố · ") +
+        ownedEntries.length;
+      html =
+        ownedEntries
+          .map(({ t, i, c }) => {
+            return (
+              '<button class="townRow" data-town="' +
+              i +
+              '"><strong>' +
+              escapeText(t.name) +
+              "</strong><span>" +
+              art(c.material) +
+              (c.jobs.length
+                ? c.jobs.length + " lệnh"
+                : "+" + cityOutput(c)[c.material] + "/h") +
+              "</span></button>"
+            );
+          })
+          .join("") +
+        (enemyEntries.length
+          ? '<h4 class="subHead warHead">Mục tiêu tiến công (Đối phương · ' +
+            enemyEntries.length +
+            ")</h4>" +
+            enemyEntries
+              .map(
+                ({ t, i }) =>
+                  '<button class="townRow enemyTownRow" data-town="' +
+                  i +
+                  '"><strong>⚔ ' +
+                  escapeText(t.name) +
+                  "</strong><span>Tấn công</span></button>",
+              )
+              .join("")
+          : "");
     }
     $("#nationalTitle").textContent = title;
     replaceContent($("#nationalBody"), html);
+  }
+  if (typeof renderVictoryBanner === "function") {
+    renderVictoryBanner();
   }
 }
 $("#cityTabs").onclick = (e) => {
@@ -2636,6 +3031,7 @@ $("#nationalBody").onclick = (e) => {
   }
 };
 $("#menuCity").onclick = () => openNational("cities");
+$("#menuDiplomacy").onclick = () => openNational("diplomacy");
 $("#menuStock").onclick = () => openNational("stock");
 $("#menuEvents").onclick = () => openNational("events");
 for (const [selector, delta] of [
@@ -2696,6 +3092,7 @@ const mp = {
   roomTitleDraft: "Chiến dịch Việt Nam",
   preferredSlot: "NORTH",
   inviteDraft: "",
+  confirmSurrender: false,
 };
 
 function isOnline() {
@@ -2703,7 +3100,7 @@ function isOnline() {
     mp.token &&
       mp.room &&
       mp.room.scenarioId === "vietnam_campaign_v1" &&
-      mp.room.status === "ACTIVE" &&
+      (mp.room.status === "ACTIVE" || mp.room.status === "ENDED") &&
       mp.match &&
       mp.match.campaignState,
   );
@@ -2783,9 +3180,13 @@ function buildOnlineLiveState() {
       name: city.name,
       ownerNationId: city.ownerNationId,
       owned: city.ownerNationId === viewerNationId,
+      capital: Boolean(city.capital),
       material: city.material,
       factory: city.factory,
       office: city.office,
+      base: city.base || 0,
+      bunker: city.bunker || 0,
+      hospital: city.hospital || 0,
       reserve: city.reserve,
       jobs: city.jobs.map((j) => ({
         key: j.key,
@@ -2808,6 +3209,9 @@ function buildOnlineLiveState() {
       city: u.cityName,
       cityId: u.cityId,
       position: u.position,
+      hp: u.hp,
+      maxHp: u.maxHp,
+      inCombat: Boolean(u.inCombat),
       trip: u.trip
         ? {
             to: u.trip.toCityName,
@@ -2822,21 +3226,42 @@ function buildOnlineLiveState() {
 
   const tempState = { cities, units };
   const net = ledger(tempState).net;
-  const elapsedMs = Math.max(0, now - cs.timeUtc);
+  const elapsedMs = cs.victory ? 0 : Math.max(0, now - cs.timeUtc);
   const baseBalance = nation
     ? nation.balance
     : [0, 0, 0, 0, 0, 0, 0];
   const balance = baseBalance.map((v, i) => Math.max(0, v + elapsedMs * net[i]));
 
+  const effectiveVictory =
+    cs.victory ||
+    (mp.room?.status === "ENDED" && mp.room.winnerSlot
+      ? {
+          winnerNationId:
+            mp.room.winnerSlot === "NORTH" ? "nat_north_dir" : "nat_south_rep",
+          winnerSlot: mp.room.winnerSlot,
+          reason: mp.room.endedReason === "SURRENDER" ? "SURRENDER" : "VICTORY_POINTS",
+          achievedAtUtc: cs.timeUtc,
+          targetVp: cs.victoryTargetVp || 400,
+          scoresByNation: cs.victoryPointsByNation || {},
+        }
+      : null);
+
   return {
     online: true,
     viewerNationId,
     start: cs.startUtc,
-    time: now,
+    time: effectiveVictory ? cs.timeUtc : now,
     balance,
     cities,
     units,
     learned: nation ? [...nation.learned] : [],
+    stats: nation?.stats || null,
+    diplomacy: cs.diplomacy || null,
+    victoryTargetVp: cs.victoryTargetVp || 400,
+    victoryPointsByNation: cs.victoryPointsByNation || {},
+    victory: effectiveVictory,
+    news: cs.news || [],
+    battleReports: cs.battleReports || [],
     study: nation?.study
       ? {
           key: nation.study.key,
@@ -2853,7 +3278,7 @@ function buildOnlineLiveState() {
 }
 
 function getNextOnlineDeadlineUtc() {
-  if (!isOnline()) return null;
+  if (!isOnline() || mp.match.campaignState.victory) return null;
   const cs = mp.match.campaignState;
   const viewerNationId = mp.match.viewerNationId;
   let earliest = null;
@@ -2869,6 +3294,19 @@ function getNextOnlineDeadlineUtc() {
   }
   for (const u of Object.values(cs.units)) {
     if (u.ownerNationId === viewerNationId && u.trip) consider(u.trip.endUtc);
+    if (cs.diplomacy?.relation === "WAR" && (u.inCombat || u.key === "artillery")) {
+      consider(u.lastCombatUtc ? u.lastCombatUtc + 10000 : cs.timeUtc + 10000);
+    }
+    if (
+      u.ownerNationId === viewerNationId &&
+      !u.trip &&
+      !u.inCombat &&
+      u.hp < u.maxHp &&
+      u.cityId &&
+      (cs.cities[u.cityId]?.hospital || 0) > 0
+    ) {
+      consider((u.lastHealUtc || cs.timeUtc) + 30000);
+    }
   }
   return earliest;
 }
@@ -2953,6 +3391,9 @@ function connectOnlineSocket() {
       if (!wasActive && mp.room.status === "ACTIVE") {
         pullOnlineSnapshot();
         panel(null);
+      } else if (wasActive && mp.room.status === "ENDED") {
+        mp.confirmSurrender = false;
+        pullOnlineSnapshot();
       }
       renderMpPanel();
       refresh();
@@ -3037,6 +3478,10 @@ async function refreshMyRooms() {
 async function sendOnlineCommand(payload, retryKey = null, attempt = 0) {
   if (!isOnline()) {
     notice("Chưa vào phòng chiến dịch đang diễn ra.");
+    return false;
+  }
+  if (mp.room.status !== "ACTIVE" || mp.match?.campaignState?.victory) {
+    notice("Trận chiến dịch đã kết thúc.");
     return false;
   }
   if (busy && attempt === 0) return false;
@@ -3149,6 +3594,225 @@ async function sendOnlineMove(unit, toCityName) {
     toCityId,
     expectedRev: unit.rev,
   });
+}
+
+async function sendOnlineDiplomacy(action) {
+  if (!isOnline()) {
+    notice("Ngoại giao chỉ khả dụng trong phòng mạng.");
+    return false;
+  }
+  const nationId = mp.match.viewerNationId;
+  const targetNationId =
+    nationId === "nat_north_dir" ? "nat_south_rep" : "nat_north_dir";
+  return sendOnlineCommand({
+    type: "CAMPAIGN_SET_DIPLOMACY",
+    nationId,
+    targetNationId,
+    action,
+  });
+}
+
+function renderDiplomacyHtml() {
+  if (!isOnline() || !live?.diplomacy) {
+    return '<div class="mpBox"><h3>Chế độ chơi đơn</h3><p class="mpMuted">Mở nút <b>Phòng mạng</b> để thi đấu 2 người chơi với ngoại giao, chiến tranh, chiếm đóng thành phố và điểm chiến thắng.</p></div>';
+  }
+  const dip = live.diplomacy;
+  const myId = live.viewerNationId;
+  const myLabel = myId === "nat_north_dir" ? "Phương Bắc" : "Phương Nam";
+  const oppLabel = myId === "nat_north_dir" ? "Phương Nam" : "Phương Bắc";
+  const northVp = live.victoryPointsByNation?.nat_north_dir ?? 0;
+  const southVp = live.victoryPointsByNation?.nat_south_rep ?? 0;
+  const targetVp = live.victoryTargetVp || 400;
+  const northCities = Object.values(live.cities).filter(
+    (c) => c.ownerNationId === "nat_north_dir",
+  ).length;
+  const southCities = Object.values(live.cities).filter(
+    (c) => c.ownerNationId === "nat_south_rep",
+  ).length;
+
+  let actionsHtml = "";
+  if (!live.victory) {
+    if (dip.relation === "PEACE") {
+      actionsHtml +=
+        '<button class="dipBtnWar" data-diplomacy="DECLARE_WAR">⚔ Tuyên chiến với ' +
+        oppLabel +
+        "</button>";
+      if (dip.sharedIntelActive) {
+        actionsHtml +=
+          '<button data-diplomacy="END_INTEL">Chấm dứt chia sẻ tình báo</button>';
+      } else if (dip.intelProposedByNationId && dip.intelProposedByNationId !== myId) {
+        actionsHtml +=
+          '<button class="mpBtnPrimary" data-diplomacy="ACCEPT_INTEL">Chấp nhận chia sẻ tình báo</button>';
+      } else if (dip.intelProposedByNationId === myId) {
+        actionsHtml +=
+          '<button disabled>Đang chờ đối phương đồng ý tình báo</button>';
+      } else {
+        actionsHtml +=
+          '<button data-diplomacy="PROPOSE_INTEL">Đề nghị chia sẻ tình báo</button>';
+      }
+    } else {
+      if (dip.peaceProposedByNationId && dip.peaceProposedByNationId !== myId) {
+        actionsHtml +=
+          '<button class="mpBtnPrimary" data-diplomacy="ACCEPT_PEACE">Chấp nhận đình chiến (Hòa bình)</button>';
+      } else if (dip.peaceProposedByNationId === myId) {
+        actionsHtml +=
+          '<button disabled>Đã gửi đề nghị hòa bình</button>';
+      } else {
+        actionsHtml +=
+          '<button data-diplomacy="PROPOSE_PEACE">Đề nghị hòa bình</button>';
+      }
+    }
+  }
+
+  const stats = live.stats;
+  const statsHtml = stats
+    ? '<div class="mpBox"><h3>Thành tích ' +
+      myLabel +
+      '</h3><p class="mpMuted">Đã huy động: <b>' +
+      stats.unitsMobilized +
+      "</b> · Tiêu diệt địch: <b>" +
+      stats.enemyUnitsDestroyed +
+      "</b> · Tổn thất: <b>" +
+      stats.unitsLost +
+      "</b> · Chiếm thành phố: <b>" +
+      stats.citiesCaptured +
+      "</b></p></div>"
+    : "";
+
+  return (
+    '<div class="dipWrap">' +
+    '<div class="mpBox"><h3>Điểm chiến thắng · Mục tiêu ' +
+    targetVp +
+    " điểm</h3>" +
+    '<div class="vpRow"><span>Phương Bắc (' +
+    northCities +
+    ' TP)</span><strong>' +
+    northVp +
+    " / " +
+    targetVp +
+    '</strong></div><progress max="' +
+    targetVp +
+    '" value="' +
+    Math.min(targetVp, northVp) +
+    '"></progress>' +
+    '<div class="vpRow"><span>Phương Nam (' +
+    southCities +
+    ' TP)</span><strong>' +
+    southVp +
+    " / " +
+    targetVp +
+    '</strong></div><progress max="' +
+    targetVp +
+    '" value="' +
+    Math.min(targetVp, southVp) +
+    '"></progress></div>' +
+    '<div class="mpBox"><div class="mpRow"><h3>Quan hệ với ' +
+    oppLabel +
+    '</h3><span class="mpTag ' +
+    (dip.relation === "WAR" ? "warTag" : "ready") +
+    '">' +
+    (dip.relation === "WAR" ? "CHIẾN TRANH" : "HÒA BÌNH") +
+    "</span></div>" +
+    '<p class="mpMuted">' +
+    (dip.relation === "WAR"
+      ? "Quân đội có thể tiến công thành phố đối phương và giao tranh trực tiếp."
+      : dip.sharedIntelActive
+        ? "Đang hòa bình và chia sẻ tầm nhìn chiến trường."
+        : "Đang hòa bình. Cần tuyên chiến trước khi tiến vào thành phố đối phương.") +
+    '</p><div class="dipActions">' +
+    actionsHtml +
+    "</div></div>" +
+    statsHtml +
+    "</div>"
+  );
+}
+
+function renderCampaignNewsAndBattlesHtml() {
+  const news = live?.news || [];
+  const reports = live?.battleReports || [];
+  let html = "";
+  if (news.length) {
+    html +=
+      '<h4 class="subHead">Nhật báo chiến sự</h4><ol class="eventList">' +
+      news
+        .slice(0, 25)
+        .map(
+          (n) =>
+            '<li><time>' +
+            new Date(n.timeUtc).toLocaleTimeString("vi-VN", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }) +
+            "</time><span><b>" +
+            escapeText(n.headline) +
+            "</b> — " +
+            escapeText(n.detail) +
+            "</span></li>",
+        )
+        .join("") +
+      "</ol>";
+  }
+  if (reports.length) {
+    html +=
+      '<h4 class="subHead">Báo cáo chiến đấu (' +
+      reports.length +
+      ')</h4><ol class="eventList">' +
+      reports
+        .slice(0, 20)
+        .map(
+          (r) =>
+            "<li><time>" +
+            new Date(r.occurredAtUtc).toLocaleTimeString("vi-VN", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }) +
+            "</time><span><b>" +
+            (r.kind === "BOMBARDMENT" ? "◎ Pháo kích" : "⚔ Cận chiến") +
+            "</b> · " +
+            escapeText(r.summary) +
+            "</span></li>",
+        )
+        .join("") +
+      "</ol>";
+  }
+  return html;
+}
+
+function renderVictoryBanner() {
+  const el = $("#victoryBanner");
+  if (!el) return;
+  const v = live?.online ? live.victory : null;
+  if (!v) {
+    el.hidden = true;
+    delete el.dataset.dismissed;
+    return;
+  }
+  if (el.dataset.dismissed === "1") return;
+  const won = v.winnerNationId === live.viewerNationId;
+  const winnerName = v.winnerSlot === "NORTH" ? "PHƯƠNG BẮC" : "PHƯƠNG NAM";
+  const reasonText =
+    v.reason === "TOTAL_CONQUEST"
+      ? "Kiểm soát toàn bộ bản đồ Việt Nam."
+      : v.reason === "SURRENDER"
+        ? "Đối phương đã đầu hàng."
+        : "Đạt ngưỡng " + v.targetVp + " điểm chiến thắng.";
+  const nVp = v.scoresByNation?.nat_north_dir ?? 0;
+  const sVp = v.scoresByNation?.nat_south_rep ?? 0;
+  const html =
+    '<div class="panelHead"><h2>' +
+    (won ? "CHIẾN THẮNG CHIẾN DỊCH" : "THẤT BẠI CHIẾN DỊCH") +
+    '</h2><button type="button" data-dismiss-victory="1" aria-label="Đóng bảng kết quả">×</button></div>' +
+    '<div class="victoryBody"><strong>' +
+    winnerName +
+    " GIÀNH THẮNG LỢI</strong><p>" +
+    escapeText(reasonText) +
+    "</p><p>Điểm chung cuộc: Phương Bắc <b>" +
+    nVp +
+    "</b> · Phương Nam <b>" +
+    sVp +
+    "</b></p></div>";
+  replaceContent(el, html);
+  el.hidden = false;
 }
 
 async function enterOnlineRoom(matchId) {
@@ -3336,7 +4000,12 @@ function renderMpPanel() {
         wsLabel +
         " · v" +
         (mp.match?.version ?? 0) +
-        '</span><button type="button" id="mpSyncBtn" class="mpBtnSmall">Đồng bộ</button></div>';
+        '</span><button type="button" id="mpSyncBtn" class="mpBtnSmall">Đồng bộ</button></div>' +
+        '<div class="mpRow">' +
+        (mp.confirmSurrender
+          ? '<button type="button" id="mpSurrenderConfirm" class="dipBtnWar">Xác nhận đầu hàng</button><button type="button" id="mpSurrenderCancel" class="mpBtnSmall">Hủy</button>'
+          : '<button type="button" id="mpSurrenderBtn" class="mpBtnSmall">Đầu hàng trận đấu</button>') +
+        "</div>";
     }
     html +=
       '<div class="mpRow"><button type="button" id="mpLeaveBtn" class="mpBtnSmall">Chuyển sang chơi đơn</button></div></div>';
@@ -3448,6 +4117,33 @@ $("#mpBody").addEventListener("click", async (e) => {
   }
   if (btn.id === "mpSyncBtn") {
     await pullOnlineSnapshot();
+    return;
+  }
+  if (btn.id === "mpSurrenderBtn") {
+    mp.confirmSurrender = true;
+    renderMpPanel();
+    return;
+  }
+  if (btn.id === "mpSurrenderCancel") {
+    mp.confirmSurrender = false;
+    renderMpPanel();
+    return;
+  }
+  if (btn.id === "mpSurrenderConfirm" && mp.room) {
+    mp.confirmSurrender = false;
+    const res = await mpApi(
+      "/api/rooms/" + encodeURIComponent(mp.room.matchId) + "/surrender",
+      { method: "POST", body: {} },
+    );
+    if (res.ok && res.data?.ok) {
+      mp.room = res.data.room;
+      mp.error = "";
+      await pullOnlineSnapshot();
+      panel(null);
+    } else {
+      mp.error = res.data?.reason || "Không thể đầu hàng lúc này.";
+      renderMpPanel();
+    }
     return;
   }
   if (btn.id === "mpReadyBtn" && mp.room) {
@@ -3605,16 +4301,30 @@ function simNow() {
 }
 function unitList(units) {
   return units
-    .map(
-      (u) =>
+    .map((u) => {
+      const st = unitStats[u.key] || unitStats.reserve;
+      const hpStr =
+        u.hp !== undefined && u.maxHp !== undefined
+          ? " · " + u.hp + "/" + u.maxHp + " HP"
+          : "";
+      return (
         '<button class="unitRow" data-select-unit="' +
         u.id +
-        '"><strong>▣ ' +
+        '"><strong>' +
+        st.glyph +
+        " " +
         unitTitle(u) +
         "</strong><span>" +
-        escapeText(u.trip ? "→ " + u.trip.to : u.city || "Đã dừng") +
-        "</span></button>",
-    )
+        escapeText(
+          (u.inCombat
+            ? "⚔ Giao tranh"
+            : u.trip
+              ? "→ " + u.trip.to
+              : u.city || "Đã dừng") + hpStr,
+        ) +
+        "</span></button>"
+      );
+    })
     .join("");
 }
 function studyHtml() {
@@ -3634,15 +4344,17 @@ function studyHtml() {
       const state = learned
         ? "Hoàn tất"
         : locked
-          ? "Cần cấp I"
+          ? "Cần " + doctrines[d.requires].name
           : live.study
             ? "Hàng đợi bận"
             : blocked
               ? "Thiếu tài nguyên"
               : "Nghiên cứu";
       return (
-        '<div class="techRow"><small>CẤP ' +
-        (d.requires ? "II" : "I") +
+        '<div class="techRow"><small>' +
+        (d.branch ? d.branch + " · " : "") +
+        "CẤP " +
+        (d.tier || (d.requires ? "II" : "I")) +
         "</small><h3>" +
         d.name +
         "</h3><p>" +
@@ -3721,30 +4433,51 @@ function renderArmy() {
   $("#stage").classList.toggle("picking", !!unit && choosingDestination);
   if (!unit) return;
   const isEnemy = unit.owned === false;
+  const st = unitStats[unit.key] || unitStats.reserve;
+  const hpText =
+    unit.hp !== undefined && unit.maxHp !== undefined
+      ? "HP " + unit.hp + "/" + unit.maxHp
+      : "";
+  const statMeta =
+    " · Công " +
+    st.softAttack +
+    "/" +
+    st.hardAttack +
+    " · Thủ " +
+    st.defense +
+    (st.ranged ? " · Pháo 1.25°" : st.canConquer ? " · Chiếm đất" : "");
+  const atWar = live.online && live.diplomacy?.relation === "WAR";
   $("#armyName").textContent = isEnemy
     ? unitTitle(unit) + " · Đối phương"
-    : unitTitle(unit);
+    : unitTitle(unit) + (hpText ? " (" + hpText + ")" : "");
   $("#armyInfo").textContent = isEnemy
     ? "Liên hệ trinh sát đối phương" +
+      (hpText ? " · " + hpText : "") +
       (unit.city ? " tại " + unit.city : "") +
       " · Không thể ra lệnh."
     : choosingDestination
-      ? "Chọn thành phố đích trên bản đồ hoặc trong menu Thành phố."
-      : unit.trip
-        ? "Đang di chuyển tới " +
-          unit.trip.to +
-          " · Còn " +
-          countdown(unit.trip.end - live.time)
-        : unit.city
-          ? "Đóng quân tại " + unit.city
-          : "Đã dừng trên đường";
+      ? atWar
+        ? "Chọn thành phố đồng minh hoặc thành phố đối phương để di chuyển / tiến công."
+        : "Chọn thành phố đích trên bản đồ hoặc trong menu Thành phố."
+      : unit.inCombat
+        ? "ĐANG GIAO TRANH!" + statMeta
+        : unit.trip
+          ? "Đang di chuyển tới " +
+            unit.trip.to +
+            " · Còn " +
+            countdown(unit.trip.end - live.time) +
+            statMeta
+          : (unit.city ? "Đóng quân tại " + unit.city : "Đã dừng trên đường") +
+            statMeta;
   $("#move").hidden = isEnemy;
   $("#halt").hidden = isEnemy;
   $("#move").textContent = choosingDestination
     ? "Hủy chọn đích"
     : unit.trip
       ? "Đổi điểm đến"
-      : "Di chuyển";
+      : atWar
+        ? "Di chuyển / Tiến công"
+        : "Di chuyển";
   $("#halt").disabled = isEnemy || !unit.trip;
 }
 const routeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg"),
@@ -3767,13 +4500,18 @@ function drawUnits() {
         "points",
         points.map((p) => projectPoint(p.lon, p.lat).join(",")).join(" "),
       );
+      const destOwned = live?.cities?.[u.trip.to]?.owned !== false;
+      routeLine.classList.toggle("assault", !destOwned);
       route = true;
     }
     if (x < -35 || x > w + 35 || y < -35 || y > h + 35) continue;
     const ownerTag = u.owned === false ? "enemy:" : "own:";
     const key = u.city ? ownerTag + "city:" + u.city : ownerTag + "unit:" + u.id;
-    if (!groups.has(key)) groups.set(key, { x, y, enemy: u.owned === false, units: [] });
-    groups.get(key).units.push(u);
+    if (!groups.has(key))
+      groups.set(key, { x, y, enemy: u.owned === false, fighting: false, units: [] });
+    const grp = groups.get(key);
+    grp.units.push(u);
+    if (u.inCombat) grp.fighting = true;
   }
   routeSvg.style.display = route ? "" : "none";
   for (const [key, node] of pins)
@@ -3791,10 +4529,20 @@ function drawUnits() {
     }
     const members = g.units,
       sel = members.findIndex((u) => u.id === activeUnit);
-    const firstLabel = members[0].displayNumber ?? members[0].id;
+    const first = members[0];
+    const firstGlyph = (unitStats[first.key] || unitStats.reserve).glyph;
+    const firstLabel = first.displayNumber ?? first.id;
     btn.textContent =
-      "▣ " + (members.length > 1 ? "×" + members.length : firstLabel);
-    btn.title = members.map(unitTitle).join(", ");
+      firstGlyph + " " + (members.length > 1 ? "×" + members.length : firstLabel);
+    btn.title = members
+      .map(
+        (m) =>
+          unitTitle(m) +
+          (m.hp !== undefined && m.maxHp !== undefined
+            ? " (" + m.hp + "/" + m.maxHp + " HP)"
+            : ""),
+      )
+      .join(", ");
     btn.setAttribute("aria-label", "Chọn quân: " + btn.title);
     btn.style.transform =
       "translate(" +
@@ -3804,6 +4552,7 @@ function drawUnits() {
       "px)";
     btn.classList.toggle("active", sel >= 0);
     btn.classList.toggle("enemy", g.enemy);
+    btn.classList.toggle("fighting", g.fighting);
     btn.onclick = () => chooseCounter(members[(sel + 1) % members.length].id);
   }
 }
@@ -3851,6 +4600,16 @@ document.addEventListener("click", (e) => {
       commitOrder((s) =>
         studyOrder(s, b.dataset.abort, true, Number(b.dataset.start)),
       );
+    }
+  }
+  if (b.dataset.diplomacy && typeof sendOnlineDiplomacy === "function") {
+    sendOnlineDiplomacy(b.dataset.diplomacy);
+  }
+  if (b.dataset.dismissVictory) {
+    const vb = $("#victoryBanner");
+    if (vb) {
+      vb.dataset.dismissed = "1";
+      vb.hidden = true;
     }
   }
 });

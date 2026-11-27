@@ -12,16 +12,30 @@ function simNow() {
 }
 function unitList(units) {
   return units
-    .map(
-      (u) =>
+    .map((u) => {
+      const st = unitStats[u.key] || unitStats.reserve;
+      const hpStr =
+        u.hp !== undefined && u.maxHp !== undefined
+          ? " · " + u.hp + "/" + u.maxHp + " HP"
+          : "";
+      return (
         '<button class="unitRow" data-select-unit="' +
         u.id +
-        '"><strong>▣ ' +
+        '"><strong>' +
+        st.glyph +
+        " " +
         unitTitle(u) +
         "</strong><span>" +
-        escapeText(u.trip ? "→ " + u.trip.to : u.city || "Đã dừng") +
-        "</span></button>",
-    )
+        escapeText(
+          (u.inCombat
+            ? "⚔ Giao tranh"
+            : u.trip
+              ? "→ " + u.trip.to
+              : u.city || "Đã dừng") + hpStr,
+        ) +
+        "</span></button>"
+      );
+    })
     .join("");
 }
 function studyHtml() {
@@ -41,15 +55,17 @@ function studyHtml() {
       const state = learned
         ? "Hoàn tất"
         : locked
-          ? "Cần cấp I"
+          ? "Cần " + doctrines[d.requires].name
           : live.study
             ? "Hàng đợi bận"
             : blocked
               ? "Thiếu tài nguyên"
               : "Nghiên cứu";
       return (
-        '<div class="techRow"><small>CẤP ' +
-        (d.requires ? "II" : "I") +
+        '<div class="techRow"><small>' +
+        (d.branch ? d.branch + " · " : "") +
+        "CẤP " +
+        (d.tier || (d.requires ? "II" : "I")) +
         "</small><h3>" +
         d.name +
         "</h3><p>" +
@@ -128,30 +144,51 @@ function renderArmy() {
   $("#stage").classList.toggle("picking", !!unit && choosingDestination);
   if (!unit) return;
   const isEnemy = unit.owned === false;
+  const st = unitStats[unit.key] || unitStats.reserve;
+  const hpText =
+    unit.hp !== undefined && unit.maxHp !== undefined
+      ? "HP " + unit.hp + "/" + unit.maxHp
+      : "";
+  const statMeta =
+    " · Công " +
+    st.softAttack +
+    "/" +
+    st.hardAttack +
+    " · Thủ " +
+    st.defense +
+    (st.ranged ? " · Pháo 1.25°" : st.canConquer ? " · Chiếm đất" : "");
+  const atWar = live.online && live.diplomacy?.relation === "WAR";
   $("#armyName").textContent = isEnemy
     ? unitTitle(unit) + " · Đối phương"
-    : unitTitle(unit);
+    : unitTitle(unit) + (hpText ? " (" + hpText + ")" : "");
   $("#armyInfo").textContent = isEnemy
     ? "Liên hệ trinh sát đối phương" +
+      (hpText ? " · " + hpText : "") +
       (unit.city ? " tại " + unit.city : "") +
       " · Không thể ra lệnh."
     : choosingDestination
-      ? "Chọn thành phố đích trên bản đồ hoặc trong menu Thành phố."
-      : unit.trip
-        ? "Đang di chuyển tới " +
-          unit.trip.to +
-          " · Còn " +
-          countdown(unit.trip.end - live.time)
-        : unit.city
-          ? "Đóng quân tại " + unit.city
-          : "Đã dừng trên đường";
+      ? atWar
+        ? "Chọn thành phố đồng minh hoặc thành phố đối phương để di chuyển / tiến công."
+        : "Chọn thành phố đích trên bản đồ hoặc trong menu Thành phố."
+      : unit.inCombat
+        ? "ĐANG GIAO TRANH!" + statMeta
+        : unit.trip
+          ? "Đang di chuyển tới " +
+            unit.trip.to +
+            " · Còn " +
+            countdown(unit.trip.end - live.time) +
+            statMeta
+          : (unit.city ? "Đóng quân tại " + unit.city : "Đã dừng trên đường") +
+            statMeta;
   $("#move").hidden = isEnemy;
   $("#halt").hidden = isEnemy;
   $("#move").textContent = choosingDestination
     ? "Hủy chọn đích"
     : unit.trip
       ? "Đổi điểm đến"
-      : "Di chuyển";
+      : atWar
+        ? "Di chuyển / Tiến công"
+        : "Di chuyển";
   $("#halt").disabled = isEnemy || !unit.trip;
 }
 const routeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg"),
@@ -174,13 +211,18 @@ function drawUnits() {
         "points",
         points.map((p) => projectPoint(p.lon, p.lat).join(",")).join(" "),
       );
+      const destOwned = live?.cities?.[u.trip.to]?.owned !== false;
+      routeLine.classList.toggle("assault", !destOwned);
       route = true;
     }
     if (x < -35 || x > w + 35 || y < -35 || y > h + 35) continue;
     const ownerTag = u.owned === false ? "enemy:" : "own:";
     const key = u.city ? ownerTag + "city:" + u.city : ownerTag + "unit:" + u.id;
-    if (!groups.has(key)) groups.set(key, { x, y, enemy: u.owned === false, units: [] });
-    groups.get(key).units.push(u);
+    if (!groups.has(key))
+      groups.set(key, { x, y, enemy: u.owned === false, fighting: false, units: [] });
+    const grp = groups.get(key);
+    grp.units.push(u);
+    if (u.inCombat) grp.fighting = true;
   }
   routeSvg.style.display = route ? "" : "none";
   for (const [key, node] of pins)
@@ -198,10 +240,20 @@ function drawUnits() {
     }
     const members = g.units,
       sel = members.findIndex((u) => u.id === activeUnit);
-    const firstLabel = members[0].displayNumber ?? members[0].id;
+    const first = members[0];
+    const firstGlyph = (unitStats[first.key] || unitStats.reserve).glyph;
+    const firstLabel = first.displayNumber ?? first.id;
     btn.textContent =
-      "▣ " + (members.length > 1 ? "×" + members.length : firstLabel);
-    btn.title = members.map(unitTitle).join(", ");
+      firstGlyph + " " + (members.length > 1 ? "×" + members.length : firstLabel);
+    btn.title = members
+      .map(
+        (m) =>
+          unitTitle(m) +
+          (m.hp !== undefined && m.maxHp !== undefined
+            ? " (" + m.hp + "/" + m.maxHp + " HP)"
+            : ""),
+      )
+      .join(", ");
     btn.setAttribute("aria-label", "Chọn quân: " + btn.title);
     btn.style.transform =
       "translate(" +
@@ -211,6 +263,7 @@ function drawUnits() {
       "px)";
     btn.classList.toggle("active", sel >= 0);
     btn.classList.toggle("enemy", g.enemy);
+    btn.classList.toggle("fighting", g.fighting);
     btn.onclick = () => chooseCounter(members[(sel + 1) % members.length].id);
   }
 }
@@ -258,6 +311,16 @@ document.addEventListener("click", (e) => {
       commitOrder((s) =>
         studyOrder(s, b.dataset.abort, true, Number(b.dataset.start)),
       );
+    }
+  }
+  if (b.dataset.diplomacy && typeof sendOnlineDiplomacy === "function") {
+    sendOnlineDiplomacy(b.dataset.diplomacy);
+  }
+  if (b.dataset.dismissVictory) {
+    const vb = $("#victoryBanner");
+    if (vb) {
+      vb.dataset.dismissed = "1";
+      vb.hidden = true;
     }
   }
 });

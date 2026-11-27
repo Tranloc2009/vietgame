@@ -7,6 +7,7 @@ import {
   DomainEvent,
   DomainEventSchema,
   FixedPointIntSchema,
+  getCampaignUnitVisionRadiusDeg,
   HumanSlotSchema,
   interpolateCampaignUnitPosition,
   MatchIdSchema,
@@ -317,25 +318,32 @@ export function projectMatchForViewer(
   let filteredCampaignState: CampaignMatchState | undefined = undefined;
   if (publicFields.campaignState) {
     const cs = publicFields.campaignState;
-    const observerPoints: Array<{ lon: number; lat: number }> = [];
+    if (cs.diplomacy?.sharedIntelActive && viewerNationId) {
+      for (const nId of Object.keys(cs.nations)) {
+        observers.add(nId);
+      }
+    }
+    const observerSources: Array<{ lon: number; lat: number; radiusSq: number }> = [];
     if (viewerNationId) {
+      const cityRadiusSq = CAMPAIGN_OBSERVATION_RADIUS_DEG * CAMPAIGN_OBSERVATION_RADIUS_DEG;
       for (const city of Object.values(cs.cities)) {
         if (observers.has(city.ownerNationId)) {
-          observerPoints.push({ lon: city.lon, lat: city.lat });
+          observerSources.push({ lon: city.lon, lat: city.lat, radiusSq: cityRadiusSq });
         }
       }
       for (const unit of Object.values(cs.units)) {
         if (observers.has(unit.ownerNationId)) {
-          observerPoints.push(interpolateCampaignUnitPosition(unit, state.currentUtc as number));
+          const r = getCampaignUnitVisionRadiusDeg(unit.key);
+          const pt = interpolateCampaignUnitPosition(unit, state.currentUtc as number);
+          observerSources.push({ lon: pt.lon, lat: pt.lat, radiusSq: r * r });
         }
       }
     }
-    const radiusSq = CAMPAIGN_OBSERVATION_RADIUS_DEG * CAMPAIGN_OBSERVATION_RADIUS_DEG;
     const isPointObserved = (pt: { lon: number; lat: number }): boolean => {
-      for (const op of observerPoints) {
+      for (const op of observerSources) {
         const dx = pt.lon - op.lon;
         const dy = pt.lat - op.lat;
-        if (dx * dx + dy * dy <= radiusSq) return true;
+        if (dx * dx + dy * dy <= op.radiusSq) return true;
       }
       return false;
     };
@@ -354,6 +362,9 @@ export function projectMatchForViewer(
           ...city,
           factory: 0,
           office: 0,
+          base: 0,
+          bunker: 0,
+          hospital: 0,
           reserve: 0,
           jobs: [],
         };
@@ -396,6 +407,11 @@ export function projectMatchForViewer(
     const filteredCampaignLog = cs.log.filter(
       (entry) => entry.nationId === null || (viewerNationId !== null && entry.nationId === viewerNationId)
     );
+    const filteredBattleReports = (cs.battleReports ?? []).filter(
+      (rep) =>
+        viewerNationId !== null &&
+        (rep.attackerNationId === viewerNationId || rep.defenderNationId === viewerNationId)
+    );
 
     filteredCampaignState = {
       ...cs,
@@ -403,6 +419,7 @@ export function projectMatchForViewer(
       cities: filteredCampaignCities,
       units: filteredCampaignUnits,
       log: filteredCampaignLog,
+      battleReports: filteredBattleReports,
     };
   } else {
     const visible = new Set(Object.values(state.regions).filter(r=>observers.has(r.controllerNationId)).map(r=>r.regionId));

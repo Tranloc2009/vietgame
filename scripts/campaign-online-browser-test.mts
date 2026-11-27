@@ -373,6 +373,137 @@ async function shutdownServer(server: BootedServer): Promise<void> {
         });
         assert.equal(fastDuration, 24_000);
 
+        // 11. T05 Full WW3 Loop: Base + Artillery + Diplomacy War + Bombardment + Assault/Capture + News/Reports + Surrender Victory
+        // Advance 25s so North Motor arrives at Hà Nội; meanwhile North builds Base at Đà Nẵng, researches Artillery;
+        // South builds Office at Quảng Ngãi and mobilizes Reserve defender.
+        clock.advanceByMs(25_000);
+        await Promise.all([
+          pNorth.evaluate(() => pullOnlineSnapshot()),
+          pSouth.evaluate(() => pullOnlineSnapshot()),
+        ]);
+
+        // North builds Army Base Lv 1 at Đà Nẵng and starts Artillery research
+        await press(pNorth, '#menuCity');
+        await pNorth.locator('.townRow').filter({ hasText: 'Đà Nẵng' }).click();
+        await press(pNorth, '[data-city-tab="build"]');
+        await press(pNorth, '[data-project="base"]');
+        await pNorth.locator('[data-cancel="base"]').waitFor({ state: 'visible' });
+        await press(pNorth, '#menuStudy');
+        await press(pNorth, '[data-study="artillery"]');
+        await pNorth.locator('[data-abort="artillery"]').waitFor({ state: 'visible' });
+        await press(pNorth, '[data-close="national"]');
+
+        // South builds Office at Quảng Ngãi
+        await press(pSouth, '#menuCity');
+        await pSouth.locator('.townRow').filter({ hasText: 'Quảng Ngãi' }).click();
+        await press(pSouth, '[data-city-tab="build"]');
+        await press(pSouth, '[data-project="office"]');
+        await pSouth.locator('[data-cancel="office"]').waitFor({ state: 'visible' });
+
+        // Complete Base (55s), Artillery tech (60s), and South Office (45s)
+        clock.advanceByMs(61_000);
+        await Promise.all([
+          pNorth.evaluate(() => pullOnlineSnapshot()),
+          pSouth.evaluate(() => pullOnlineSnapshot()),
+        ]);
+        await pNorth.waitForFunction(
+          () => live.learned.includes('artillery') && live.cities['Đà Nẵng'].base === 1
+        );
+
+        // North mobilizes Artillery at Đà Nẵng; South mobilizes Reserve defender at Quảng Ngãi
+        await press(pNorth, '#menuCity');
+        await pNorth.locator('.townRow').filter({ hasText: 'Đà Nẵng' }).click();
+        await press(pNorth, '[data-city-tab="mobilize"]');
+        await press(pNorth, '[data-project="artillery"]');
+        await pNorth.locator('[data-cancel="artillery"]').waitFor({ state: 'visible' });
+
+        await press(pSouth, '[data-city-tab="mobilize"]');
+        await press(pSouth, '[data-project="reserve"]');
+        await pSouth.locator('[data-cancel="reserve"]').waitFor({ state: 'visible' });
+
+        // Complete Artillery (60s) and Reserve (40s)
+        clock.advanceByMs(61_000);
+        await Promise.all([
+          pNorth.evaluate(() => pullOnlineSnapshot()),
+          pSouth.evaluate(() => pullOnlineSnapshot()),
+        ]);
+        await pNorth.waitForFunction(() =>
+          live.units.some((u: any) => u.key === 'artillery' && u.owned !== false)
+        );
+        await pSouth.waitForFunction(() =>
+          live.units.some((u: any) => u.key === 'reserve' && u.owned !== false)
+        );
+
+        // Open Diplomacy on North -> verify 320 / 400 VP & HÒA BÌNH -> click Tuyên chiến!
+        await press(pNorth, '#menuDiplomacy');
+        await pNorth.locator('[data-diplomacy="DECLARE_WAR"]').waitFor({ state: 'visible' });
+        const dipTextBefore = (await pNorth.locator('#nationalBody').textContent()) || '';
+        assert.ok(dipTextBefore.includes('320 / 400'));
+        assert.ok(dipTextBefore.includes('HÒA BÌNH'));
+        await press(pNorth, '[data-diplomacy="DECLARE_WAR"]');
+
+        // Verify WAR status syncs to both North & South AND opening Artillery bombardment hits South defender!
+        await pNorth.waitForFunction(
+          () =>
+            live.diplomacy?.relation === 'WAR' &&
+            live.battleReports?.some((r: any) => r.kind === 'BOMBARDMENT')
+        );
+        await pSouth.waitForFunction(() => live.diplomacy?.relation === 'WAR');
+        await press(pNorth, '[data-close="national"]');
+
+        // Select North Motor (#1) -> order assault on enemy Quảng Ngãi via #menuCity enemy list
+        await press(pNorth, '#menuUnits');
+        await pNorth.locator('[data-select-unit="unt_vn_0001"]').click();
+        await pNorth.waitForFunction(() => activeUnit === 'unt_vn_0001');
+        await press(pNorth, '#move');
+        await press(pNorth, '#menuCity');
+        await pNorth.locator('.enemyTownRow').filter({ hasText: 'Quảng Ngãi' }).click();
+        await pNorth.waitForFunction(() => live.units.find((u: any) => u.id === 'unt_vn_0001')?.trip?.to === 'Quảng Ngãi');
+
+        // Capture live WAR & assault screenshot on all 3 viewports (crimson assault line + 7-button HUD + unit combat stats)
+        await pNorth.screenshot({
+          path: path.join(outDir, `online-vietnam-war-${vp.name}.png`),
+        });
+
+        // Verify zero horizontal overflow during WAR / expanded HUD as well
+        const overflowWar = await pNorth.evaluate(
+          () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+        );
+        assert.equal(overflowWar, false, `Horizontal overflow during WAR on ${vp.name}`);
+
+        // Advance +35s (motor2 arrival 24s + bombardment/melee ticks) -> Quảng Ngãi captured -> 330 vs 310 VP!
+        clock.advanceByMs(35_000);
+        await Promise.all([
+          pNorth.evaluate(() => pullOnlineSnapshot()),
+          pSouth.evaluate(() => pullOnlineSnapshot()),
+        ]);
+        await pNorth.waitForFunction(
+          () =>
+            live.cities['Quảng Ngãi']?.owned === true &&
+            live.victoryPointsByNation?.nat_north_dir === 330 &&
+            live.victoryPointsByNation?.nat_south_rep === 310
+        );
+
+        // Verify Newspaper & Battle Reports in #menuEvents (Báo chí)
+        await press(pNorth, '#menuEvents');
+        const newsText = (await pNorth.locator('#nationalBody').textContent()) || '';
+        assert.ok(newsText.includes('Nhật báo chiến sự'));
+        assert.ok(newsText.includes('Báo cáo chiến đấu'));
+        assert.ok(newsText.includes('Quảng Ngãi'));
+        await press(pNorth, '[data-close="national"]');
+
+        // South surrenders via #menuOnline -> verify #victoryBanner renders on BOTH North and South!
+        await press(pSouth, '#menuOnline');
+        await press(pSouth, '#mpSurrenderBtn');
+        await press(pSouth, '#mpSurrenderConfirm');
+        await pNorth.locator('#victoryBanner').waitFor({ state: 'visible', timeout: 15000 });
+        await pSouth.locator('#victoryBanner').waitFor({ state: 'visible', timeout: 15000 });
+        const northVictoryText = (await pNorth.locator('#victoryBanner').textContent()) || '';
+        assert.ok(northVictoryText.includes('CHIẾN THẮNG CHIẾN DỊCH'));
+        assert.ok(northVictoryText.includes('PHƯƠNG BẮC GIÀNH THẮNG LỢI'));
+        const southVictoryText = (await pSouth.locator('#victoryBanner').textContent()) || '';
+        assert.ok(southVictoryText.includes('THẤT BẠI CHIẾN DỊCH'));
+
         // Verify server replay hash matches 100%
         const matchId = await pNorth.evaluate(() => mp.room.matchId);
         const replay = server.store.verifyMatchReplay(matchId);
@@ -392,6 +523,9 @@ async function shutdownServer(server: BootedServer): Promise<void> {
           chonQuanVaDiChuyen: 'đạt',
           capIIGiam24s: 'đạt',
           cachLyQuyenVaTamNhin: 'đạt',
+          ngoaiGiaoVaPhaoKich: 'đạt',
+          tienCongVaChiemQuangNgai: 'đạt',
+          baoChiVaBangChienThang: 'đạt',
           replayHash: 'đạt',
           errors: 0,
         });

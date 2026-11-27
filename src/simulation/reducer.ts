@@ -50,6 +50,7 @@ import {
   applyCampaignCancelCityProject,
   applyCampaignCancelResearch,
   applyCampaignMoveUnit,
+  applyCampaignSetDiplomacy,
   applyCampaignStartCityProject,
   applyCampaignStartResearch,
   settleCampaignOnTick,
@@ -271,6 +272,7 @@ export function reduceCommand(
   // Clone mutable working slices immutably (shallow copies of records we may update)
   const nextVersion = state.version + 1;
   let nations = { ...state.nations };
+  let regions = { ...state.regions };
   let units = { ...state.units };
   const jobs = { ...state.jobs };
   const policies = { ...state.policies };
@@ -846,11 +848,18 @@ export function reduceCommand(
         }
       }
 
-      // Modern Vietnam Campaign (vietnam_campaign_v1): settle due research, builds, mobilizations & unit arrivals
+      // Modern Vietnam Campaign (vietnam_campaign_v1): settle due research, builds, mobilizations, combat, conquest & healing
       if (campaignState) {
-        const campaignTick = settleCampaignOnTick(campaignState, units, payload.targetUtc);
+        const campaignTick = settleCampaignOnTick(
+          campaignState,
+          units,
+          regions,
+          nations,
+          payload.targetUtc
+        );
         campaignState = campaignTick.campaignState;
         units = campaignTick.units;
+        regions = campaignTick.regions;
         for (const ev of campaignTick.drafts) {
           drafts.push(ev);
         }
@@ -1732,6 +1741,8 @@ export function reduceCommand(
       const outcome = applyCampaignStartResearch({
         state: campaignState,
         unitsRecord: units,
+        regionsRecord: regions,
+        nationsMeta: nations,
         nationId: payload.nationId,
         doctrineKey: payload.doctrineKey,
         nowUtc,
@@ -1741,6 +1752,7 @@ export function reduceCommand(
       }
       campaignState = outcome.campaignState;
       units = outcome.units;
+      regions = outcome.regions;
       for (const ev of outcome.drafts) drafts.push(ev);
       break;
     }
@@ -1759,6 +1771,8 @@ export function reduceCommand(
       const outcome = applyCampaignCancelResearch({
         state: campaignState,
         unitsRecord: units,
+        regionsRecord: regions,
+        nationsMeta: nations,
         nationId: payload.nationId,
         doctrineKey: payload.doctrineKey,
         expectedStartUtc: payload.expectedStartUtc,
@@ -1769,6 +1783,7 @@ export function reduceCommand(
       }
       campaignState = outcome.campaignState;
       units = outcome.units;
+      regions = outcome.regions;
       for (const ev of outcome.drafts) drafts.push(ev);
       break;
     }
@@ -1787,6 +1802,8 @@ export function reduceCommand(
       const outcome = applyCampaignStartCityProject({
         state: campaignState,
         unitsRecord: units,
+        regionsRecord: regions,
+        nationsMeta: nations,
         nationId: payload.nationId,
         cityId: payload.cityId,
         projectKey: payload.projectKey,
@@ -1797,6 +1814,7 @@ export function reduceCommand(
       }
       campaignState = outcome.campaignState;
       units = outcome.units;
+      regions = outcome.regions;
       for (const ev of outcome.drafts) drafts.push(ev);
       break;
     }
@@ -1815,6 +1833,8 @@ export function reduceCommand(
       const outcome = applyCampaignCancelCityProject({
         state: campaignState,
         unitsRecord: units,
+        regionsRecord: regions,
+        nationsMeta: nations,
         nationId: payload.nationId,
         cityId: payload.cityId,
         projectKey: payload.projectKey,
@@ -1826,6 +1846,7 @@ export function reduceCommand(
       }
       campaignState = outcome.campaignState;
       units = outcome.units;
+      regions = outcome.regions;
       for (const ev of outcome.drafts) drafts.push(ev);
       break;
     }
@@ -1844,6 +1865,8 @@ export function reduceCommand(
       const outcome = applyCampaignMoveUnit({
         state: campaignState,
         unitsRecord: units,
+        regionsRecord: regions,
+        nationsMeta: nations,
         nationId: payload.nationId,
         unitId: payload.unitId,
         toCityId: payload.toCityId,
@@ -1855,6 +1878,38 @@ export function reduceCommand(
       }
       campaignState = outcome.campaignState;
       units = outcome.units;
+      regions = outcome.regions;
+      for (const ev of outcome.drafts) drafts.push(ev);
+      break;
+    }
+
+    case 'CAMPAIGN_SET_DIPLOMACY': {
+      if (actor.role !== 'SYSTEM' && actor.nationId !== payload.nationId) {
+        return reject(
+          state,
+          'FORBIDDEN_ACTION',
+          `Actor "${actor.actorId}" cannot set diplomacy for "${payload.nationId}".`
+        );
+      }
+      if (!campaignState) {
+        return reject(state, 'INVALID_TARGET', 'Phòng đấu này không thuộc kịch bản chiến dịch Việt Nam.');
+      }
+      const outcome = applyCampaignSetDiplomacy({
+        state: campaignState,
+        unitsRecord: units,
+        regionsRecord: regions,
+        nationsMeta: nations,
+        nationId: payload.nationId,
+        targetNationId: payload.targetNationId,
+        action: payload.action,
+        nowUtc,
+      });
+      if (!outcome.ok) {
+        return reject(state, outcome.code, outcome.reason);
+      }
+      campaignState = outcome.campaignState;
+      units = outcome.units;
+      regions = outcome.regions;
       for (const ev of outcome.drafts) drafts.push(ev);
       break;
     }
@@ -1902,6 +1957,7 @@ export function reduceCommand(
       },
     },
     nations,
+    regions,
     units,
     jobs,
     policies,

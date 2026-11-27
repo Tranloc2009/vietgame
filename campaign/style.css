@@ -1309,5 +1309,94 @@ footer {
   font-size: 11px;
   text-decoration: underline;
 }
+.routeOverlay polyline.assault {
+  stroke: #ff7e66;
+}
+.armyPin.fighting {
+  outline: 2px solid #ff6b57;
+  box-shadow: 0 0 8px #ff4f3a;
+}
+.offerNote {
+  font-size: 11px;
+  color: #b7c3ad;
+  margin-top: 2px;
+}
+.subHead {
+  margin: 0;
+  padding: 7px 12px;
+  font-size: 11px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  background: #2f3e34;
+  color: #d7d4b3;
+  border-bottom: 1px solid #53634f;
+}
+.subHead.warHead {
+  background: #4e2b26;
+  color: #ffd8cb;
+  border-color: #8c5249;
+}
+.enemyTownRow {
+  background: #3d2724;
+  color: #ffd9ce;
+}
+.dipWrap {
+  padding: 10px 12px;
+  display: grid;
+  gap: 10px;
+}
+.vpRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.dipWrap progress {
+  width: 100%;
+  height: 7px;
+  accent-color: #b8c27d;
+}
+.dipActions {
+  display: grid;
+  gap: 6px;
+}
+.dipBtnWar {
+  background: #7c3228;
+  color: #fff0e6;
+  border-color: #bd6a5c;
+  padding: 7px 10px;
+  font-weight: 600;
+}
+.dipBtnWar:hover {
+  background: #983d30;
+}
+.mpTag.warTag {
+  background: #7c3228;
+  color: #ffece4;
+  border-color: #c77667;
+}
+#victoryBanner {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(400px, calc(100% - 24px));
+  z-index: 9;
+  border-top: 3px solid #d9c372;
+}
+.victoryBody {
+  padding: 14px 16px;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+}
+.victoryBody strong {
+  color: #ffe58f;
+  font-size: 16px;
+  letter-spacing: 0.6px;
+}
+.victoryBody p {
+  margin: 0;
+  color: #dce1ce;
+}
+
 
 

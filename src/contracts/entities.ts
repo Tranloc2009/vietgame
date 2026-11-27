@@ -21,10 +21,12 @@ import {
   UtcEpochMsSchema,
 } from './primitives';
 import {
+  CampaignDiplomacyActionSchema,
   CampaignDoctrineKeySchema,
   CampaignLaneSchema,
   CampaignMatchStateSchema,
   CampaignProjectKeySchema,
+  CampaignRelationStatusSchema,
   CampaignResourceTupleSchema,
   ScenarioIdSchema,
 } from './campaign';
@@ -428,6 +430,14 @@ export const CommandPayloadSchema = z.discriminatedUnion('type', [
       expectedRev: z.number().int().min(0),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_SET_DIPLOMACY'),
+      nationId: NationIdSchema,
+      targetNationId: NationIdSchema,
+      action: CampaignDiplomacyActionSchema,
+    })
+    .strict(),
 ]);
 export type CommandPayload = z.infer<typeof CommandPayloadSchema>;
 
@@ -736,6 +746,49 @@ export const DomainEventPayloadSchema = z.discriminatedUnion('type', [
       unitId: UnitIdSchema,
       cityId: RegionIdSchema,
       arrivedAtUtc: UtcEpochMsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_DIPLOMACY_CHANGED'),
+      actorNationId: NationIdSchema,
+      targetNationId: NationIdSchema,
+      action: CampaignDiplomacyActionSchema,
+      relation: CampaignRelationStatusSchema,
+      sharedIntelActive: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_COMBAT_RESOLVED'),
+      reportId: z.string(),
+      kind: z.enum(['MELEE', 'BOMBARDMENT']),
+      locationName: z.string(),
+      attackerNationId: NationIdSchema,
+      defenderNationId: NationIdSchema,
+      damageToDefenders: z.number().int().min(0),
+      damageToAttackers: z.number().int().min(0),
+      destroyedUnitIds: z.array(UnitIdSchema),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_CITY_CAPTURED'),
+      cityId: RegionIdSchema,
+      cityName: z.string(),
+      previousOwnerNationId: NationIdSchema,
+      newOwnerNationId: NationIdSchema,
+      capturedByUnitId: UnitIdSchema,
+      newOwnerVp: z.number().int().min(0),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('CAMPAIGN_MATCH_ENDED'),
+      winnerNationId: NationIdSchema,
+      winnerSlot: HumanSlotSchema,
+      reason: z.enum(['VICTORY_POINTS', 'TOTAL_CONQUEST', 'SURRENDER']),
+      winnerVp: z.number().int().min(0),
     })
     .strict(),
 ]);

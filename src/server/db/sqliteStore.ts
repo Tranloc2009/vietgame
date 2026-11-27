@@ -1564,6 +1564,18 @@ export class SqliteMatchStore {
           );
         }
 
+        // Atomically end the room in SQLite when campaign victory triggers
+        if (result.nextState.campaignState?.victory) {
+          const v = result.nextState.campaignState.victory;
+          this.db
+            .prepare(
+              `UPDATE match_rooms
+               SET status = 'ENDED', winner_slot = ?, ended_reason = ?, updated_at_utc = ?
+               WHERE match_id = ? AND status = 'ACTIVE'`
+            )
+            .run(v.winnerSlot, v.reason, appliedAtUtc, matchId);
+        }
+
         return { found: true, result };
       }
     );

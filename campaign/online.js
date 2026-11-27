@@ -18,6 +18,7 @@ const mp = {
   roomTitleDraft: "Chiến dịch Việt Nam",
   preferredSlot: "NORTH",
   inviteDraft: "",
+  confirmSurrender: false,
 };
 
 function isOnline() {
@@ -25,7 +26,7 @@ function isOnline() {
     mp.token &&
       mp.room &&
       mp.room.scenarioId === "vietnam_campaign_v1" &&
-      mp.room.status === "ACTIVE" &&
+      (mp.room.status === "ACTIVE" || mp.room.status === "ENDED") &&
       mp.match &&
       mp.match.campaignState,
   );
@@ -105,9 +106,13 @@ function buildOnlineLiveState() {
       name: city.name,
       ownerNationId: city.ownerNationId,
       owned: city.ownerNationId === viewerNationId,
+      capital: Boolean(city.capital),
       material: city.material,
       factory: city.factory,
       office: city.office,
+      base: city.base || 0,
+      bunker: city.bunker || 0,
+      hospital: city.hospital || 0,
       reserve: city.reserve,
       jobs: city.jobs.map((j) => ({
         key: j.key,
@@ -130,6 +135,9 @@ function buildOnlineLiveState() {
       city: u.cityName,
       cityId: u.cityId,
       position: u.position,
+      hp: u.hp,
+      maxHp: u.maxHp,
+      inCombat: Boolean(u.inCombat),
       trip: u.trip
         ? {
             to: u.trip.toCityName,
@@ -144,21 +152,42 @@ function buildOnlineLiveState() {
 
   const tempState = { cities, units };
   const net = ledger(tempState).net;
-  const elapsedMs = Math.max(0, now - cs.timeUtc);
+  const elapsedMs = cs.victory ? 0 : Math.max(0, now - cs.timeUtc);
   const baseBalance = nation
     ? nation.balance
     : [0, 0, 0, 0, 0, 0, 0];
   const balance = baseBalance.map((v, i) => Math.max(0, v + elapsedMs * net[i]));
 
+  const effectiveVictory =
+    cs.victory ||
+    (mp.room?.status === "ENDED" && mp.room.winnerSlot
+      ? {
+          winnerNationId:
+            mp.room.winnerSlot === "NORTH" ? "nat_north_dir" : "nat_south_rep",
+          winnerSlot: mp.room.winnerSlot,
+          reason: mp.room.endedReason === "SURRENDER" ? "SURRENDER" : "VICTORY_POINTS",
+          achievedAtUtc: cs.timeUtc,
+          targetVp: cs.victoryTargetVp || 400,
+          scoresByNation: cs.victoryPointsByNation || {},
+        }
+      : null);
+
   return {
     online: true,
     viewerNationId,
     start: cs.startUtc,
-    time: now,
+    time: effectiveVictory ? cs.timeUtc : now,
     balance,
     cities,
     units,
     learned: nation ? [...nation.learned] : [],
+    stats: nation?.stats || null,
+    diplomacy: cs.diplomacy || null,
+    victoryTargetVp: cs.victoryTargetVp || 400,
+    victoryPointsByNation: cs.victoryPointsByNation || {},
+    victory: effectiveVictory,
+    news: cs.news || [],
+    battleReports: cs.battleReports || [],
     study: nation?.study
       ? {
           key: nation.study.key,
@@ -175,7 +204,7 @@ function buildOnlineLiveState() {
 }
 
 function getNextOnlineDeadlineUtc() {
-  if (!isOnline()) return null;
+  if (!isOnline() || mp.match.campaignState.victory) return null;
   const cs = mp.match.campaignState;
   const viewerNationId = mp.match.viewerNationId;
   let earliest = null;
@@ -191,6 +220,19 @@ function getNextOnlineDeadlineUtc() {
   }
   for (const u of Object.values(cs.units)) {
     if (u.ownerNationId === viewerNationId && u.trip) consider(u.trip.endUtc);
+    if (cs.diplomacy?.relation === "WAR" && (u.inCombat || u.key === "artillery")) {
+      consider(u.lastCombatUtc ? u.lastCombatUtc + 10000 : cs.timeUtc + 10000);
+    }
+    if (
+      u.ownerNationId === viewerNationId &&
+      !u.trip &&
+      !u.inCombat &&
+      u.hp < u.maxHp &&
+      u.cityId &&
+      (cs.cities[u.cityId]?.hospital || 0) > 0
+    ) {
+      consider((u.lastHealUtc || cs.timeUtc) + 30000);
+    }
   }
   return earliest;
 }
@@ -275,6 +317,9 @@ function connectOnlineSocket() {
       if (!wasActive && mp.room.status === "ACTIVE") {
         pullOnlineSnapshot();
         panel(null);
+      } else if (wasActive && mp.room.status === "ENDED") {
+        mp.confirmSurrender = false;
+        pullOnlineSnapshot();
       }
       renderMpPanel();
       refresh();
@@ -359,6 +404,10 @@ async function refreshMyRooms() {
 async function sendOnlineCommand(payload, retryKey = null, attempt = 0) {
   if (!isOnline()) {
     notice("Chưa vào phòng chiến dịch đang diễn ra.");
+    return false;
+  }
+  if (mp.room.status !== "ACTIVE" || mp.match?.campaignState?.victory) {
+    notice("Trận chiến dịch đã kết thúc.");
     return false;
   }
   if (busy && attempt === 0) return false;
@@ -471,6 +520,225 @@ async function sendOnlineMove(unit, toCityName) {
     toCityId,
     expectedRev: unit.rev,
   });
+}
+
+async function sendOnlineDiplomacy(action) {
+  if (!isOnline()) {
+    notice("Ngoại giao chỉ khả dụng trong phòng mạng.");
+    return false;
+  }
+  const nationId = mp.match.viewerNationId;
+  const targetNationId =
+    nationId === "nat_north_dir" ? "nat_south_rep" : "nat_north_dir";
+  return sendOnlineCommand({
+    type: "CAMPAIGN_SET_DIPLOMACY",
+    nationId,
+    targetNationId,
+    action,
+  });
+}
+
+function renderDiplomacyHtml() {
+  if (!isOnline() || !live?.diplomacy) {
+    return '<div class="mpBox"><h3>Chế độ chơi đơn</h3><p class="mpMuted">Mở nút <b>Phòng mạng</b> để thi đấu 2 người chơi với ngoại giao, chiến tranh, chiếm đóng thành phố và điểm chiến thắng.</p></div>';
+  }
+  const dip = live.diplomacy;
+  const myId = live.viewerNationId;
+  const myLabel = myId === "nat_north_dir" ? "Phương Bắc" : "Phương Nam";
+  const oppLabel = myId === "nat_north_dir" ? "Phương Nam" : "Phương Bắc";
+  const northVp = live.victoryPointsByNation?.nat_north_dir ?? 0;
+  const southVp = live.victoryPointsByNation?.nat_south_rep ?? 0;
+  const targetVp = live.victoryTargetVp || 400;
+  const northCities = Object.values(live.cities).filter(
+    (c) => c.ownerNationId === "nat_north_dir",
+  ).length;
+  const southCities = Object.values(live.cities).filter(
+    (c) => c.ownerNationId === "nat_south_rep",
+  ).length;
+
+  let actionsHtml = "";
+  if (!live.victory) {
+    if (dip.relation === "PEACE") {
+      actionsHtml +=
+        '<button class="dipBtnWar" data-diplomacy="DECLARE_WAR">⚔ Tuyên chiến với ' +
+        oppLabel +
+        "</button>";
+      if (dip.sharedIntelActive) {
+        actionsHtml +=
+          '<button data-diplomacy="END_INTEL">Chấm dứt chia sẻ tình báo</button>';
+      } else if (dip.intelProposedByNationId && dip.intelProposedByNationId !== myId) {
+        actionsHtml +=
+          '<button class="mpBtnPrimary" data-diplomacy="ACCEPT_INTEL">Chấp nhận chia sẻ tình báo</button>';
+      } else if (dip.intelProposedByNationId === myId) {
+        actionsHtml +=
+          '<button disabled>Đang chờ đối phương đồng ý tình báo</button>';
+      } else {
+        actionsHtml +=
+          '<button data-diplomacy="PROPOSE_INTEL">Đề nghị chia sẻ tình báo</button>';
+      }
+    } else {
+      if (dip.peaceProposedByNationId && dip.peaceProposedByNationId !== myId) {
+        actionsHtml +=
+          '<button class="mpBtnPrimary" data-diplomacy="ACCEPT_PEACE">Chấp nhận đình chiến (Hòa bình)</button>';
+      } else if (dip.peaceProposedByNationId === myId) {
+        actionsHtml +=
+          '<button disabled>Đã gửi đề nghị hòa bình</button>';
+      } else {
+        actionsHtml +=
+          '<button data-diplomacy="PROPOSE_PEACE">Đề nghị hòa bình</button>';
+      }
+    }
+  }
+
+  const stats = live.stats;
+  const statsHtml = stats
+    ? '<div class="mpBox"><h3>Thành tích ' +
+      myLabel +
+      '</h3><p class="mpMuted">Đã huy động: <b>' +
+      stats.unitsMobilized +
+      "</b> · Tiêu diệt địch: <b>" +
+      stats.enemyUnitsDestroyed +
+      "</b> · Tổn thất: <b>" +
+      stats.unitsLost +
+      "</b> · Chiếm thành phố: <b>" +
+      stats.citiesCaptured +
+      "</b></p></div>"
+    : "";
+
+  return (
+    '<div class="dipWrap">' +
+    '<div class="mpBox"><h3>Điểm chiến thắng · Mục tiêu ' +
+    targetVp +
+    " điểm</h3>" +
+    '<div class="vpRow"><span>Phương Bắc (' +
+    northCities +
+    ' TP)</span><strong>' +
+    northVp +
+    " / " +
+    targetVp +
+    '</strong></div><progress max="' +
+    targetVp +
+    '" value="' +
+    Math.min(targetVp, northVp) +
+    '"></progress>' +
+    '<div class="vpRow"><span>Phương Nam (' +
+    southCities +
+    ' TP)</span><strong>' +
+    southVp +
+    " / " +
+    targetVp +
+    '</strong></div><progress max="' +
+    targetVp +
+    '" value="' +
+    Math.min(targetVp, southVp) +
+    '"></progress></div>' +
+    '<div class="mpBox"><div class="mpRow"><h3>Quan hệ với ' +
+    oppLabel +
+    '</h3><span class="mpTag ' +
+    (dip.relation === "WAR" ? "warTag" : "ready") +
+    '">' +
+    (dip.relation === "WAR" ? "CHIẾN TRANH" : "HÒA BÌNH") +
+    "</span></div>" +
+    '<p class="mpMuted">' +
+    (dip.relation === "WAR"
+      ? "Quân đội có thể tiến công thành phố đối phương và giao tranh trực tiếp."
+      : dip.sharedIntelActive
+        ? "Đang hòa bình và chia sẻ tầm nhìn chiến trường."
+        : "Đang hòa bình. Cần tuyên chiến trước khi tiến vào thành phố đối phương.") +
+    '</p><div class="dipActions">' +
+    actionsHtml +
+    "</div></div>" +
+    statsHtml +
+    "</div>"
+  );
+}
+
+function renderCampaignNewsAndBattlesHtml() {
+  const news = live?.news || [];
+  const reports = live?.battleReports || [];
+  let html = "";
+  if (news.length) {
+    html +=
+      '<h4 class="subHead">Nhật báo chiến sự</h4><ol class="eventList">' +
+      news
+        .slice(0, 25)
+        .map(
+          (n) =>
+            '<li><time>' +
+            new Date(n.timeUtc).toLocaleTimeString("vi-VN", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }) +
+            "</time><span><b>" +
+            escapeText(n.headline) +
+            "</b> — " +
+            escapeText(n.detail) +
+            "</span></li>",
+        )
+        .join("") +
+      "</ol>";
+  }
+  if (reports.length) {
+    html +=
+      '<h4 class="subHead">Báo cáo chiến đấu (' +
+      reports.length +
+      ')</h4><ol class="eventList">' +
+      reports
+        .slice(0, 20)
+        .map(
+          (r) =>
+            "<li><time>" +
+            new Date(r.occurredAtUtc).toLocaleTimeString("vi-VN", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }) +
+            "</time><span><b>" +
+            (r.kind === "BOMBARDMENT" ? "◎ Pháo kích" : "⚔ Cận chiến") +
+            "</b> · " +
+            escapeText(r.summary) +
+            "</span></li>",
+        )
+        .join("") +
+      "</ol>";
+  }
+  return html;
+}
+
+function renderVictoryBanner() {
+  const el = $("#victoryBanner");
+  if (!el) return;
+  const v = live?.online ? live.victory : null;
+  if (!v) {
+    el.hidden = true;
+    delete el.dataset.dismissed;
+    return;
+  }
+  if (el.dataset.dismissed === "1") return;
+  const won = v.winnerNationId === live.viewerNationId;
+  const winnerName = v.winnerSlot === "NORTH" ? "PHƯƠNG BẮC" : "PHƯƠNG NAM";
+  const reasonText =
+    v.reason === "TOTAL_CONQUEST"
+      ? "Kiểm soát toàn bộ bản đồ Việt Nam."
+      : v.reason === "SURRENDER"
+        ? "Đối phương đã đầu hàng."
+        : "Đạt ngưỡng " + v.targetVp + " điểm chiến thắng.";
+  const nVp = v.scoresByNation?.nat_north_dir ?? 0;
+  const sVp = v.scoresByNation?.nat_south_rep ?? 0;
+  const html =
+    '<div class="panelHead"><h2>' +
+    (won ? "CHIẾN THẮNG CHIẾN DỊCH" : "THẤT BẠI CHIẾN DỊCH") +
+    '</h2><button type="button" data-dismiss-victory="1" aria-label="Đóng bảng kết quả">×</button></div>' +
+    '<div class="victoryBody"><strong>' +
+    winnerName +
+    " GIÀNH THẮNG LỢI</strong><p>" +
+    escapeText(reasonText) +
+    "</p><p>Điểm chung cuộc: Phương Bắc <b>" +
+    nVp +
+    "</b> · Phương Nam <b>" +
+    sVp +
+    "</b></p></div>";
+  replaceContent(el, html);
+  el.hidden = false;
 }
 
 async function enterOnlineRoom(matchId) {
@@ -658,7 +926,12 @@ function renderMpPanel() {
         wsLabel +
         " · v" +
         (mp.match?.version ?? 0) +
-        '</span><button type="button" id="mpSyncBtn" class="mpBtnSmall">Đồng bộ</button></div>';
+        '</span><button type="button" id="mpSyncBtn" class="mpBtnSmall">Đồng bộ</button></div>' +
+        '<div class="mpRow">' +
+        (mp.confirmSurrender
+          ? '<button type="button" id="mpSurrenderConfirm" class="dipBtnWar">Xác nhận đầu hàng</button><button type="button" id="mpSurrenderCancel" class="mpBtnSmall">Hủy</button>'
+          : '<button type="button" id="mpSurrenderBtn" class="mpBtnSmall">Đầu hàng trận đấu</button>') +
+        "</div>";
     }
     html +=
       '<div class="mpRow"><button type="button" id="mpLeaveBtn" class="mpBtnSmall">Chuyển sang chơi đơn</button></div></div>';
@@ -770,6 +1043,33 @@ $("#mpBody").addEventListener("click", async (e) => {
   }
   if (btn.id === "mpSyncBtn") {
     await pullOnlineSnapshot();
+    return;
+  }
+  if (btn.id === "mpSurrenderBtn") {
+    mp.confirmSurrender = true;
+    renderMpPanel();
+    return;
+  }
+  if (btn.id === "mpSurrenderCancel") {
+    mp.confirmSurrender = false;
+    renderMpPanel();
+    return;
+  }
+  if (btn.id === "mpSurrenderConfirm" && mp.room) {
+    mp.confirmSurrender = false;
+    const res = await mpApi(
+      "/api/rooms/" + encodeURIComponent(mp.room.matchId) + "/surrender",
+      { method: "POST", body: {} },
+    );
+    if (res.ok && res.data?.ok) {
+      mp.room = res.data.room;
+      mp.error = "";
+      await pullOnlineSnapshot();
+      panel(null);
+    } else {
+      mp.error = res.data?.reason || "Không thể đầu hàng lúc này.";
+      renderMpPanel();
+    }
     return;
   }
   if (btn.id === "mpReadyBtn" && mp.room) {

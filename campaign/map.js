@@ -253,6 +253,39 @@ function draw() {
         );
     }
   }
+  // Draw tactical radar / artillery range rings for the currently selected friendly unit
+  if (
+    typeof activeUnit !== "undefined" &&
+    activeUnit !== null &&
+    typeof live !== "undefined" &&
+    live?.units
+  ) {
+    const u = live.units.find((a) => a.id === activeUnit && a.owned !== false);
+    if (u && typeof pointAt === "function" && typeof simNow === "function") {
+      const pos = pointAt(u, simNow());
+      const [ux, uy] = projectPoint(pos.lon, pos.lat);
+      const st = typeof unitStats !== "undefined" ? unitStats[u.key] : null;
+      const visionDeg = st?.visionDeg || 1.25;
+      ctx.save();
+      ctx.setLineDash([5, 5]);
+      ctx.strokeStyle = "#b7d9a066";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.ellipse(ux, uy, visionDeg * sx, visionDeg * sy, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      if (st?.ranged) {
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = "#f28b6b99";
+        ctx.fillStyle = "#c94c3818";
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.ellipse(ux, uy, 1.25 * sx, 1.25 * sy, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
   const km =
     [5, 10, 20, 50, 100, 200, 500]
       .filter(

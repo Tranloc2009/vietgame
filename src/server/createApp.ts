@@ -185,6 +185,7 @@ function checkCommandNationOwnership(
     case 'CAMPAIGN_START_CITY_PROJECT':
     case 'CAMPAIGN_CANCEL_CITY_PROJECT':
     case 'CAMPAIGN_MOVE_UNIT':
+    case 'CAMPAIGN_SET_DIPLOMACY':
       if (command.payload.nationId !== memberNationId) {
         return {
           ok: false,
@@ -279,6 +280,9 @@ export function createServerRuntime(
   const scheduler = new MatchClockScheduler(store, clock, {
     onMatchTicked: (tickPayload) => {
       broadcastRoomDelta(tickPayload);
+      if (tickPayload.emittedEvents.some((e) => e.payload.type === 'CAMPAIGN_MATCH_ENDED')) {
+        broadcastRoomStatus(tickPayload.matchId);
+      }
     },
   });
 
@@ -1283,6 +1287,9 @@ export function createServerRuntime(
         fromSequence: prevSeq + 1,
         toSequence: result.nextState.eventSequence,
       });
+      if (result.emittedEvents.some((e) => e.payload.type === 'CAMPAIGN_MATCH_ENDED')) {
+        broadcastRoomStatus(parsedId.data);
+      }
     }
 
     res.status(result.idempotentDuplicate ? 200 : 201).json({

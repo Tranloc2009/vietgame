@@ -1,12 +1,12 @@
 # Điểm tiếp tục
 
-Mốc **T04 (Nghiên cứu → Huy động → Điều khiển quân trên máy chủ ngay trên bản đồ Việt Nam mới ở `/`)** đã hoàn thành và kiểm thử đầy đủ trên 55 bài tự động cùng 3 khung trình duyệt Edge (desktop và cảm ứng). Đang dừng tại mốc này để Game Director nghiệm thu trước khi bước sang T05.
+Mốc **T05 (Cây công nghệ WW3, Ngoại giao, Combat Engine, Chiếm đóng thành phố, Nhật báo/Báo cáo chiến đấu & Điểm chiến thắng trên bản đồ Việt Nam mới ở `/`)** đã hoàn thành và kiểm thử thực chạy trên **58/58** bài tự động cùng 3 khung trình duyệt Edge (`1440×900`, `390×844` cảm ứng, `844×390` cảm ứng) và hồi quy đầy đủ cho chơi đơn IndexedDB + `/rooms.html`.
 
-**T05 · P0 · Giao tranh trên máy chủ, chiếm đóng thành phố và điểm chiến thắng cho kịch bản Việt Nam (`vietnam_campaign_v1`)**
+**T06 · P1 · Gộp/tách đội hình (Stack/Split), Nhánh Không quân – Hải quân, Phe máy (AI/NPC) & Trải nghiệm hoàn thiện sản phẩm**
 
-Phụ thuộc T04. Tiếp tục phát triển trực tiếp trên bản đồ Việt Nam mới (`campaign/` + `src/simulation/vietnamCampaignEngine.ts`).
+Phụ thuộc T05. Tiếp tục mở rộng trực tiếp trên `vietnam_campaign_v1` (`campaign/` + `src/simulation/vietnamCampaignEngine.ts`) mà không phá vỡ bất kỳ bất biến nào của T01–T05.
 
-1. **Combat Engine trên máy chủ:** Mở rộng lệnh di chuyển cho phép tiến vào thành phố/vị trí đối phương khi ở trạng thái chiến tranh; thêm chỉ số chiến đấu (HP, tấn công, phòng thủ, tầm phát hiện, tầm đánh) trong danh mục máy chủ và xử lý giao tranh theo tick tất định.
-2. **Chiếm đóng lãnh thổ & thành phố:** Cập nhật `ownerNationId` của thành phố khi đơn vị có quyền chiếm đóng giành thắng lợi, hủy/xử lý an toàn hàng đợi của chủ cũ, cập nhật lại sản lượng kinh tế, màu đánh dấu trên bản đồ và thông báo nhật ký.
-3. **Điểm chiến thắng & kết trận:** Tính Victory Points từ thành phố và thủ đô, hiển thị bảng xếp hạng/mục tiêu chiến thắng trên HUD, và kết thúc trận tất định khi đạt ngưỡng thắng hoặc đầu hàng.
-4. **Mở rộng cây công nghệ & công trình theo tham chiếu Supremacy WW3:** Bổ sung căn cứ lục quân, trinh sát/xe thiết giáp/pháo binh, gộp/tách đội hình (stack/split) và ngoại giao tuyên chiến/hòa bình trực tiếp trên bản đồ Việt Nam mới.
+1. **Gộp & tách đội hình (Army Stack / Split) + Tập hợp điểm đóng quân:** Cho phép gom nhiều đơn vị đồng minh cùng tọa độ thành một đạo quân có chỉ số tổng hợp, tách chọn lọc từng đơn vị ra khỏi đội hình, và hiển thị huy hiệu số lượng/tổng HP rõ ràng trên bản đồ.
+2. **Mở rộng nhánh Không quân & Hải quân WW3:** Bổ sung công trình Căn cứ không quân (`airbase`) và Quân cảng (`naval_base`, chỉ xây ở thành phố ven biển), công nghệ & đơn vị Tiêm kích đánh chặn, Trực thăng vũ trang, Tàu hộ vệ tên lửa với luật hành trình đường không/đường biển và tầm tác chiến riêng.
+3. **Phe máy (AI/NPC) & Chế độ luyện tập trên máy chủ:** Triển khai bộ lập kế hoạch AI tất định (không dùng API trả phí, không dùng `Math.random()`) cho các tỉnh trung lập hoặc chế độ đấu với máy (1 người chơi + 1 AI).
+4. **Hiệu năng, Bảo mật & Hoàn thiện phát hành:** Bổ sung rate-limiting ở tầng HTTP/WS, tối ưu chia gói bundle (`dist/assets/rooms-*.js`), phản hồi âm thanh hợp pháp (tắt/bật được), hướng dẫn tương tác cho người mới, và đo hiệu năng trên thiết bị di động thật.

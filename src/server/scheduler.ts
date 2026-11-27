@@ -9,7 +9,7 @@ import {
   IdempotencyKeySchema,
   MatchId,
 } from '../contracts';
-import { SimulationClock } from '../simulation';
+import { getEarliestCampaignDeadlineUtc, SimulationClock } from '../simulation';
 import { SqliteMatchStore } from './db/sqliteStore';
 
 export interface SchedulerOptions {
@@ -175,20 +175,12 @@ export class MatchClockScheduler {
         }
       }
       if (state.campaignState) {
-        for (const nation of Object.values(state.campaignState.nations)) {
-          if (nation.study) {
-            considerDeadline(nation.study.endUtc as number);
-          }
-        }
-        for (const city of Object.values(state.campaignState.cities)) {
-          for (const job of city.jobs) {
-            considerDeadline(job.endUtc as number);
-          }
-        }
-        for (const unit of Object.values(state.campaignState.units)) {
-          if (unit.trip) {
-            considerDeadline(unit.trip.endUtc as number);
-          }
+        const campaignDue = getEarliestCampaignDeadlineUtc(
+          state.campaignState,
+          nowUtc as number
+        );
+        if (campaignDue !== null) {
+          considerDeadline(campaignDue);
         }
       }
 

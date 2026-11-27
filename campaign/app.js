@@ -18,6 +18,8 @@ const icons = {
   search: '<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',
   online:
     '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18"/>',
+  diplomacy:
+    '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/>',
 };
 for (const el of /** @type {NodeListOf<HTMLElement>} */ (
   document.querySelectorAll("[data-icon]")

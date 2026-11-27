@@ -208,15 +208,30 @@ function logHtml() {
 function renderCity(c) {
   if (cityTab === "summary") {
     const prod = cityOutput(c);
+    const totalBuildings =
+      (c.factory || 0) +
+      (c.office || 0) +
+      (c.base || 0) +
+      (c.bunker || 0) +
+      (c.hospital || 0);
+    const defBonus = Math.min(60, (c.base || 0) * 10 + (c.bunker || 0) * 15);
+    const bParts = [];
+    if (c.factory) bParts.push("Xưởng " + c.factory);
+    if (c.office) bParts.push("VP " + c.office);
+    if (c.base) bParts.push("Căn cứ " + c.base);
+    if (c.bunker) bParts.push("Công sự " + c.bunker);
+    if (c.hospital) bParts.push("Quân y " + c.hospital);
     return (
       '<div class="cityStats"><div><small>Sản lượng mỗi ngày</small><b>' +
       art(c.material) +
       materials[c.material] +
       " +" +
       num(prod[c.material] * 24) +
-      "/ngày</b></div><div><small>Công trình</small><b>" +
-      num(c.factory + c.office) +
-      " cấp</b></div><div><small>Lực lượng</small><b>" +
+      "/ngày</b></div><div><small>Công trình" +
+      (defBonus ? " · Thủ +" + defBonus + "%" : "") +
+      "</small><b>" +
+      (bParts.length ? bParts.join(" · ") : num(totalBuildings) + " cấp") +
+      "</b></div><div><small>Lực lượng</small><b>" +
       num(
         live.units.filter(
           (u) => u.city === selected.name && u.owned !== false,
@@ -259,15 +274,23 @@ function renderCity(c) {
   return Object.entries(projects)
     .filter(([, p]) => p.lane === lane)
     .map(([key, p]) => {
-      const t = terms(c, key),
-        reason =
-          key === "motor" && !live.learned.includes("motor")
-            ? "Cần nghiên cứu cấp I"
-            : lane === "mobilize" && !c.office
-              ? "Cần văn phòng cấp 1"
-              : t.cost.some((n, i) => n * hour > live.balance[i])
-                ? "Thiếu tài nguyên"
-                : "";
+      const t = terms(c, key);
+      const st = lane === "mobilize" ? unitStats[key] : null;
+      const curLv = lane === "build" ? c[key] || 0 : 0;
+      const reason =
+        lane === "build" && p.maxLevel && curLv >= p.maxLevel
+          ? "Đã tối đa"
+          : st?.reqDoctrine && !live.learned.includes(st.reqDoctrine)
+            ? key === "motor"
+              ? "Cần nghiên cứu cấp I"
+              : "Cần " + doctrines[st.reqDoctrine].name
+            : st && (c.office || 0) < st.reqOffice
+              ? "Cần văn phòng cấp " + st.reqOffice
+              : st && (c.base || 0) < st.reqBase
+                ? "Cần căn cứ cấp " + st.reqBase
+                : t.cost.some((n, i) => n * hour > live.balance[i])
+                  ? "Thiếu tài nguyên"
+                  : "";
       const cost = t.cost
         .map((n, i) =>
           n
@@ -284,11 +307,28 @@ function renderCity(c) {
             : "",
         )
         .join("");
+      const subNote =
+        lane === "build" && p.note
+          ? '<div class="offerNote">' + escapeText(p.note) + "</div>"
+          : st
+            ? '<div class="offerNote">HP ' +
+              st.maxHp +
+              " · Công " +
+              st.softAttack +
+              "/" +
+              st.hardAttack +
+              " · Thủ " +
+              st.defense +
+              (st.ranged ? " · Pháo 1.25°" : st.canConquer ? " · Chiếm đất" : " · Xung kích") +
+              "</div>"
+            : "";
       return (
         '<div class="offer"><div><strong>' +
         p.label +
         (lane === "build" ? " · Cấp " + t.level : "") +
-        '</strong><div class="cost">' +
+        "</strong>" +
+        subNote +
+        '<div class="cost">' +
         cost +
         '</div></div><button data-project="' +
         key +
@@ -362,33 +402,73 @@ function renderMatch() {
     } else if (nationalView === "stock") {
       title = pickedMaterial < 0 ? "Kho quốc gia" : materials[pickedMaterial];
       html = renderStock(L);
+    } else if (nationalView === "diplomacy") {
+      title = "Ngoại giao & Điểm chiến thắng";
+      html =
+        typeof renderDiplomacyHtml === "function"
+          ? renderDiplomacyHtml()
+          : '<p class="emptyArmy">Ngoại giao hoạt động trong chế độ Phòng mạng.</p>';
     } else if (nationalView === "events") {
-      title = "Nhật ký sự kiện";
-      html = '<ol class="eventList">' + logHtml() + "</ol>";
+      title = "Nhật báo & Báo cáo chiến đấu";
+      html =
+        (typeof renderCampaignNewsAndBattlesHtml === "function" && live.online
+          ? renderCampaignNewsAndBattlesHtml()
+          : "") +
+        '<h4 class="subHead">Nhật ký chỉ huy</h4><ol class="eventList">' +
+        logHtml() +
+        "</ol>";
     } else {
-      const townEntries = towns
+      const atWar = live.online && live.diplomacy?.relation === "WAR";
+      const showEnemyTargets = Boolean(choosingDestination && atWar);
+      const ownedEntries = towns
         .map((t, i) => ({ t, i, c: live.cities[t.name] }))
         .filter(({ c }) => !live.online || c?.owned !== false);
-      title = (live.online ? "Thành phố của bạn · " : "Thành phố · ") + townEntries.length;
-      html = townEntries
-        .map(({ t, i, c }) => {
-          return (
-            '<button class="townRow" data-town="' +
-            i +
-            '"><strong>' +
-            escapeText(t.name) +
-            "</strong><span>" +
-            art(c.material) +
-            (c.jobs.length
-              ? c.jobs.length + " lệnh"
-              : "+" + cityOutput(c)[c.material] + "/h") +
-            "</span></button>"
-          );
-        })
-        .join("");
+      const enemyEntries = showEnemyTargets
+        ? towns
+            .map((t, i) => ({ t, i, c: live.cities[t.name] }))
+            .filter(({ c }) => c?.owned === false)
+        : [];
+      title =
+        (live.online ? "Thành phố của bạn · " : "Thành phố · ") +
+        ownedEntries.length;
+      html =
+        ownedEntries
+          .map(({ t, i, c }) => {
+            return (
+              '<button class="townRow" data-town="' +
+              i +
+              '"><strong>' +
+              escapeText(t.name) +
+              "</strong><span>" +
+              art(c.material) +
+              (c.jobs.length
+                ? c.jobs.length + " lệnh"
+                : "+" + cityOutput(c)[c.material] + "/h") +
+              "</span></button>"
+            );
+          })
+          .join("") +
+        (enemyEntries.length
+          ? '<h4 class="subHead warHead">Mục tiêu tiến công (Đối phương · ' +
+            enemyEntries.length +
+            ")</h4>" +
+            enemyEntries
+              .map(
+                ({ t, i }) =>
+                  '<button class="townRow enemyTownRow" data-town="' +
+                  i +
+                  '"><strong>⚔ ' +
+                  escapeText(t.name) +
+                  "</strong><span>Tấn công</span></button>",
+              )
+              .join("")
+          : "");
     }
     $("#nationalTitle").textContent = title;
     replaceContent($("#nationalBody"), html);
+  }
+  if (typeof renderVictoryBanner === "function") {
+    renderVictoryBanner();
   }
 }
 $("#cityTabs").onclick = (e) => {
@@ -413,6 +493,7 @@ $("#nationalBody").onclick = (e) => {
   }
 };
 $("#menuCity").onclick = () => openNational("cities");
+$("#menuDiplomacy").onclick = () => openNational("diplomacy");
 $("#menuStock").onclick = () => openNational("stock");
 $("#menuEvents").onclick = () => openNational("events");
 for (const [selector, delta] of [

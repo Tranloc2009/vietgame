@@ -6,16 +6,23 @@ import {
   UtcEpochMsSchema,
 } from './primitives';
 
+const CampaignWinnerSlotSchema = z.enum(['NORTH', 'SOUTH']);
+
 /**
  * Scenario identifier distinguishing legacy 1955 72-region rooms from the
  * modern Vietnam campaign map (60 populated places, 7-resource economy,
- * mechanized research & mobilization).
+ * WW3 research, mobilization, diplomacy, combat, conquest & victory).
  */
 export const ScenarioIdSchema = z.enum(['vietnam_1955', 'vietnam_campaign_v1']);
 export type ScenarioId = z.infer<typeof ScenarioIdSchema>;
 
 export const CAMPAIGN_HOUR_MS = 3_600_000;
 export const CAMPAIGN_OBSERVATION_RADIUS_DEG = 1.25;
+export const CAMPAIGN_MELEE_RANGE_DEG = 0.09; // ~10 km; strictly below min 0.118° inter-city spacing
+export const CAMPAIGN_RANGED_RANGE_DEG = 1.25;
+export const CAMPAIGN_COMBAT_TICK_MS = 10_000;
+export const CAMPAIGN_HEAL_TICK_MS = 30_000;
+export const CAMPAIGN_VICTORY_TARGET_VP = 400;
 
 const CampaignSafeIntSchema = z
   .number()
@@ -39,17 +46,53 @@ export const CampaignResourceTupleSchema = z.tuple([
 ]);
 export type CampaignResourceTuple = z.infer<typeof CampaignResourceTupleSchema>;
 
-export const CampaignDoctrineKeySchema = z.enum(['motor', 'motor2']);
+export const CampaignDoctrineKeySchema = z.enum([
+  'motor',
+  'motor2',
+  'recon',
+  'tank',
+  'artillery',
+]);
 export type CampaignDoctrineKey = z.infer<typeof CampaignDoctrineKeySchema>;
 
-export const CampaignProjectKeySchema = z.enum(['factory', 'office', 'reserve', 'motor']);
+export const CampaignProjectKeySchema = z.enum([
+  'factory',
+  'office',
+  'base',
+  'bunker',
+  'hospital',
+  'reserve',
+  'motor',
+  'recon',
+  'tank',
+  'artillery',
+]);
 export type CampaignProjectKey = z.infer<typeof CampaignProjectKeySchema>;
 
-export const CampaignUnitKeySchema = z.enum(['reserve', 'motor']);
+export const CampaignUnitKeySchema = z.enum([
+  'reserve',
+  'motor',
+  'recon',
+  'tank',
+  'artillery',
+]);
 export type CampaignUnitKey = z.infer<typeof CampaignUnitKeySchema>;
 
 export const CampaignLaneSchema = z.enum(['build', 'mobilize']);
 export type CampaignLane = z.infer<typeof CampaignLaneSchema>;
+
+export const CampaignRelationStatusSchema = z.enum(['PEACE', 'WAR']);
+export type CampaignRelationStatus = z.infer<typeof CampaignRelationStatusSchema>;
+
+export const CampaignDiplomacyActionSchema = z.enum([
+  'DECLARE_WAR',
+  'PROPOSE_PEACE',
+  'ACCEPT_PEACE',
+  'PROPOSE_INTEL',
+  'ACCEPT_INTEL',
+  'END_INTEL',
+]);
+export type CampaignDiplomacyAction = z.infer<typeof CampaignDiplomacyActionSchema>;
 
 export const CampaignGeoPointSchema = z
   .object({
@@ -91,6 +134,9 @@ export const CampaignCityStateSchema = z
     ownerNationId: NationIdSchema,
     factory: z.number().int().min(0),
     office: z.number().int().min(0),
+    base: z.number().int().min(0).default(0),
+    bunker: z.number().int().min(0).default(0),
+    hospital: z.number().int().min(0).default(0),
     reserve: z.number().int().min(0),
     jobs: z.array(CampaignCityJobSchema),
   })
@@ -119,6 +165,11 @@ export const CampaignUnitStateSchema = z
     position: CampaignGeoPointSchema,
     trip: CampaignUnitTripSchema.nullable(),
     rev: z.number().int().min(0),
+    hp: z.number().int().min(0).default(20),
+    maxHp: z.number().int().min(1).default(20),
+    inCombat: z.boolean().default(false),
+    lastCombatUtc: UtcEpochMsSchema.nullable().default(null),
+    lastHealUtc: UtcEpochMsSchema.nullable().default(null),
   })
   .strict();
 export type CampaignUnitState = z.infer<typeof CampaignUnitStateSchema>;
@@ -134,12 +185,78 @@ export const CampaignLogEntrySchema = z
   .strict();
 export type CampaignLogEntry = z.infer<typeof CampaignLogEntrySchema>;
 
+export const CampaignBattleReportSchema = z
+  .object({
+    reportId: z.string().min(3).max(80),
+    occurredAtUtc: UtcEpochMsSchema,
+    kind: z.enum(['MELEE', 'BOMBARDMENT']),
+    locationName: z.string().min(1).max(80),
+    attackerNationId: NationIdSchema,
+    defenderNationId: NationIdSchema,
+    attackerUnitIds: z.array(UnitIdSchema),
+    defenderUnitIds: z.array(UnitIdSchema),
+    damageToDefenders: z.number().int().min(0),
+    damageToAttackers: z.number().int().min(0),
+    destroyedUnitIds: z.array(UnitIdSchema),
+    summary: z.string().min(1).max(240),
+  })
+  .strict();
+export type CampaignBattleReport = z.infer<typeof CampaignBattleReportSchema>;
+
+export const CampaignNewsItemSchema = z
+  .object({
+    newsId: z.string().min(3).max(80),
+    timeUtc: UtcEpochMsSchema,
+    category: z.enum(['DIPLOMACY', 'COMBAT', 'CONQUEST', 'VICTORY', 'SYSTEM']),
+    headline: z.string().min(1).max(160),
+    detail: z.string().min(1).max(280),
+  })
+  .strict();
+export type CampaignNewsItem = z.infer<typeof CampaignNewsItemSchema>;
+
+export const CampaignDiplomacyStateSchema = z
+  .object({
+    relation: CampaignRelationStatusSchema,
+    peaceProposedByNationId: NationIdSchema.nullable(),
+    intelProposedByNationId: NationIdSchema.nullable(),
+    sharedIntelActive: z.boolean(),
+    updatedAtUtc: UtcEpochMsSchema,
+  })
+  .strict();
+export type CampaignDiplomacyState = z.infer<typeof CampaignDiplomacyStateSchema>;
+
+export const CampaignVictoryStateSchema = z
+  .object({
+    winnerNationId: NationIdSchema,
+    winnerSlot: CampaignWinnerSlotSchema,
+    reason: z.enum(['VICTORY_POINTS', 'TOTAL_CONQUEST', 'SURRENDER']),
+    achievedAtUtc: UtcEpochMsSchema,
+    targetVp: z.number().int().min(1),
+    scoresByNation: z.record(z.string(), z.number().int().min(0)),
+  })
+  .strict();
+export type CampaignVictoryState = z.infer<typeof CampaignVictoryStateSchema>;
+
 export const CampaignNationStateSchema = z
   .object({
     nationId: NationIdSchema,
     balance: CampaignResourceTupleSchema,
     learned: z.array(CampaignDoctrineKeySchema),
     study: CampaignResearchJobSchema.nullable(),
+    stats: z
+      .object({
+        unitsMobilized: z.number().int().min(0),
+        unitsLost: z.number().int().min(0),
+        enemyUnitsDestroyed: z.number().int().min(0),
+        citiesCaptured: z.number().int().min(0),
+      })
+      .strict()
+      .default({
+        unitsMobilized: 0,
+        unitsLost: 0,
+        enemyUnitsDestroyed: 0,
+        citiesCaptured: 0,
+      }),
   })
   .strict();
 export type CampaignNationState = z.infer<typeof CampaignNationStateSchema>;
@@ -149,13 +266,37 @@ export const CampaignMatchStateSchema = z
     startUtc: UtcEpochMsSchema,
     timeUtc: UtcEpochMsSchema,
     nextUnitNumber: z.number().int().min(1),
+    nextReportNumber: z.number().int().min(1).default(1),
+    victoryTargetVp: z.number().int().min(1).default(CAMPAIGN_VICTORY_TARGET_VP),
+    victoryPointsByNation: z.record(z.string(), z.number().int().min(0)).default({}),
+    diplomacy: CampaignDiplomacyStateSchema.optional(),
+    victory: CampaignVictoryStateSchema.nullable().default(null),
     nations: z.record(z.string(), CampaignNationStateSchema),
     cities: z.record(z.string(), CampaignCityStateSchema),
     units: z.record(z.string(), CampaignUnitStateSchema),
     log: z.array(CampaignLogEntrySchema),
+    news: z.array(CampaignNewsItemSchema).default([]),
+    battleReports: z.array(CampaignBattleReportSchema).default([]),
   })
   .strict();
 export type CampaignMatchState = z.infer<typeof CampaignMatchStateSchema>;
+
+/**
+ * Vision radius per unit type in degrees (matches Supremacy WW3 recon role).
+ */
+export function getCampaignUnitVisionRadiusDeg(key: CampaignUnitKey): number {
+  switch (key) {
+    case 'recon':
+      return 2.25;
+    case 'artillery':
+      return 1.45;
+    case 'motor':
+    case 'tank':
+      return 1.35;
+    default:
+      return CAMPAIGN_OBSERVATION_RADIUS_DEG;
+  }
+}
 
 /**
  * Pure interpolation helper shared between simulation engine and viewer fog-of-war projection.
